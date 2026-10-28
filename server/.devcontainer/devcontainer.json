@@ -1,0 +1,43 @@
+{
+    "name": "Server Dev Container",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "api",
+    "workspaceFolder": "/workspace",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "golang.go",
+                "tamasfe.even-better-toml",
+                "mtxr.sqltools",
+                "mtxr.sqltools-driver-pg"
+            ],
+            "settings": {
+                "go.toolsManagement.checkForUpdates": "local",
+                "go.useLanguageServer": true,
+                "go.formatTool": "gofmt",
+                "go.lintTool": "golint",
+                "go.docsTool": "gogetdoc",
+                "go.gotoSymbol.includeImports": true,
+                "go.autocompleteUnimportedPackages": true,
+                "sqltools.connections": [
+                    {
+                        "name": "PostgreSQL",
+                        "driver": "PostgreSQL",
+                        "previewLimit": 50,
+                        "server": "db",
+                        "port": 5432,
+                        "database": "${localEnv:POSTGRES_DB}",
+                        "username": "${localEnv:POSTGRES_USER}",
+                        "password": "${localEnv:POSTGRES_PASSWORD}"
+                    }
+                ],
+                "gopls": {
+                    "ui.completion.usePlaceholders": true
+                }
+            }
+        
+        }
+    },
+    "forwardPorts": [],
+    "postCreateCommand": "go mod download"
+}

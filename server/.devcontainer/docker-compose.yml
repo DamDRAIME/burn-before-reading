@@ -1,0 +1,32 @@
+services:
+  # -- Dev Go Environment --
+  api:
+    image: golang:1.23-bookworm
+    container_name: server_dev_container
+    volumes:
+      - ..:/workspace:cached
+
+    command: sleep infinity
+
+    environment:
+      - DB_HOST=localhost
+      - DB_PORT=5432
+      - DB_USER=myuser
+      - DB_PASSWORD=mypassword
+      - DB_NAME=mydatabase
+    
+  # -- Database Service --
+  db:
+    image: postgres:16-alpine
+    container_name: server_dev_db
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=mydatabase
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdevdata:/var/lib/postgresql/data
+
+volumes:
+  pgdevdata:
