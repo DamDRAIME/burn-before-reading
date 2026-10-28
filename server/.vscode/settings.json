@@ -3,10 +3,10 @@
         {
             "ssh": "Disabled",
             "previewLimit": 50,
-            "server": "db",
+            "server": "localhost",
             "port": 5432,
-            "name": "PostgreSQL",
             "driver": "PostgreSQL",
+            "name": "devcontainer_db",
             "database": "mydatabase",
             "username": "myuser",
             "password": "mypassword"

@@ -3,6 +3,11 @@
     "dockerComposeFile": "docker-compose.yml",
     "service": "api",
     "workspaceFolder": "/workspace",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "version": "latest"
+        }
+    },
     "customizations": {
         "vscode": {
             "extensions": [

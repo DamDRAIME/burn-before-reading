@@ -2,14 +2,14 @@ services:
   # -- Dev Go Environment --
   api:
     image: golang:1.23-bookworm
-    container_name: server_dev_container
+    container_name: server_dev_api
     volumes:
       - ..:/workspace:cached
 
     command: sleep infinity
 
     environment:
-      - DB_HOST=localhost
+      - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=myuser
       - DB_PASSWORD=mypassword
@@ -27,6 +27,15 @@ services:
       - "5432:5432"
     volumes:
       - pgdevdata:/var/lib/postgresql/data
-
+  
+  migrate:
+    image: migrate/migrate:v4.15.2
+    container_name: server_dev_migrate
+    entrypoint: ["migrate", "-path=/migrations", "-database=postgres://myuser:mypassword@db:5432/mydatabase?sslmode=disable"]
+    depends_on:
+      - db
+    volumes:
+      - ../migrations:/migrations
+    command: ["up"]
 volumes:
   pgdevdata:
