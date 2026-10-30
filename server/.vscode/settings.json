@@ -10,17 +10,6 @@
             "database": "mydatabase",
             "username": "myuser",
             "password": "mypassword"
-        },
-        {
-            "ssh": "Disabled",
-            "previewLimit": 50,
-            "server": "localhost",
-            "port": 5432,
-            "driver": "PostgreSQL",
-            "name": "test",
-            "database": "mydatabase",
-            "username": "myuser",
-            "password": "mypassword"
         }
     ]
 }

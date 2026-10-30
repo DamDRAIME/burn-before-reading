@@ -14,7 +14,10 @@ services:
       - DB_USER=myuser
       - DB_PASSWORD=mypassword
       - DB_NAME=mydatabase
-    
+      - DATABASE_URL=postgres://myuser:mypassword@db:5432/mydatabase?sslmode=disable
+    depends_on:
+      - db
+
   # -- Database Service --
   db:
     image: postgres:16-alpine

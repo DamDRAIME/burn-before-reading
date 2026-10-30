@@ -3,11 +3,6 @@
     "dockerComposeFile": "docker-compose.yml",
     "service": "api",
     "workspaceFolder": "/workspace",
-    "features": {
-        "ghcr.io/devcontainers/features/docker-in-docker:2": {
-            "version": "latest"
-        }
-    },
     "customizations": {
         "vscode": {
             "extensions": [
@@ -31,9 +26,9 @@
                         "previewLimit": 50,
                         "server": "db",
                         "port": 5432,
-                        "database": "${localEnv:POSTGRES_DB}",
-                        "username": "${localEnv:POSTGRES_USER}",
-                        "password": "${localEnv:POSTGRES_PASSWORD}"
+                        "database": "mydatabase",
+                        "username": "myuser",
+                        "password": "mypassword"
                     }
                 ],
                 "gopls": {
@@ -44,5 +39,5 @@
         }
     },
     "forwardPorts": [],
-    "postCreateCommand": "go mod download"
+    "postCreateCommand": "go mod download && go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3 && apt-get update && apt-get install -y postgresql-client"
 }
