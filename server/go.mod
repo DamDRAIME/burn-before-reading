@@ -1,4 +1,4 @@
-module paper-whisper
+module bbr
 
 go 1.27
 

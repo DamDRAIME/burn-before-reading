@@ -1,5 +1,5 @@
 {
-    "name": "Server Dev Container",
+    "name": "Burn-Before-Reading DevContainer",
     "dockerComposeFile": "docker-compose.yml",
     "service": "api",
     "workspaceFolder": "/workspace",
