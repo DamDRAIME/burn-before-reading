@@ -79,7 +79,7 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 
 	msg, err := h.service.SubmitMessage(r.Context(), submitParams)
 	if err != nil {
-		h.handleErr(w, err)
+		h.handleError(w, err)
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *MessagesHandler) getMessageByID(w http.ResponseWriter, r *http.Request)
 
 	msg, err := h.service.GetMessageByID(r.Context(), id)
 	if err != nil {
-		h.handleErr(w, err)
+		h.handleError(w, err)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 
 	messages, err := h.service.ListMessages(r.Context(), limit, offset)
 	if err != nil {
-		h.handleErr(w, err)
+		h.handleError(w, err)
 		return
 	}
 
@@ -131,7 +131,7 @@ func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request)
 
 	msg, err := h.service.ApproveMessage(r.Context(), id)
 	if err != nil {
-		h.handleErr(w, err)
+		h.handleError(w, err)
 		return
 	}
 
@@ -166,7 +166,7 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	writeJSONResponse(w, statusCode, map[string]string{"error": message})
 }
 
-func (h *MessagesHandler) handleErr(w http.ResponseWriter, err error) {
+func (h *MessagesHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, messages.ErrEmptySenderName):
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
