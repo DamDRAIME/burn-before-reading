@@ -1,0 +1,41 @@
+# TODO
+## Authentication & authorization
+
+- [ ] Authenticate submitters (session/JWT from the website); only they can POST /messages
+- [ ] Moderator/admin role: only they can approve, reject, list messages and see sender_ip
+- [ ] Per-printer API tokens (stored hashed in `printers`); printers can only poll/claim/report status
+- [ ] Group routes in chi behind role-specific middleware
+
+## Approval flow
+
+- [ ] SubmitMessage: set initial status (pending / awaiting_approval) based on source instead of always pending
+- [ ] Derive source from the caller's identity instead of hardcoding SourceWeb in createMessage
+- [ ] Add a reject route (StatusRejected)
+- [ ] Fix ApproveMessage race (read-then-write): replace UpdateMessageStatus with an atomic *TransitionStatus(id, from, to)* using `UPDATE ... WHERE id = $2 AND status = $3`; on no rows, look up the message to return ErrNotFound vs ErrInvalidStatus
+- [ ] Idem for RejectMessage
+- [ ] Set approved_at / claimed_at / printed_at on the matching transitions
+
+## Printer side
+
+- [ ] Add StatusClaimed to the Go model (exists in the DB constraint)
+- [ ] Printer store/service (the `printers` table is unused)
+- [ ] Atomic claim endpoint: `FOR UPDATE SKIP LOCKED`, set printer_id, claimed_at, attempts+1
+- [ ] Status reporting endpoints: printing -> printed, or failed with last_error
+- [ ] Heartbeat endpoint updating printers.last_seen_at / last_job_at
+- [ ] Recover stuck claims: back to pending after a timeout, give up after max attempts
+
+## Security hardening
+
+- [ ] Strip control characters (except) from content to prevent ESC/POS command injection; filter again on the Pi
+- [ ] Rate limiting per user and per IP
+- [ ] Only use middleware.RealIP behind a trusted reverse proxy (X-Forwarded-For is spoofable)
+
+## Smaller fixes
+
+- [ ] Map ErrInvalidStatus to 409 Conflict instead of 400
+- [X] Remove duplicate (dead) ErrNotFound case in handleError
+- [ ] Add a status filter to the list route (e.g. ?status=awaiting_approval) for the moderation queue
+- [ ] Dockerfile uses golang:1.23 but go.mod requires go 1.27: build fails
+- [ ] Run `go mod tidy` (lib/pq appears unused; pgx is used)
+- [ ] Add tests for the service layer using a fake Store
+- [ ] Fill in the README "Server" section
