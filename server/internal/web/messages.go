@@ -24,9 +24,12 @@ func NewMessagesHandler(service *messages.Service, logger *slog.Logger) *Message
 	return &MessagesHandler{service: service, logger: logger}
 }
 
-func (h *MessagesHandler) RegisterRoutes(r chi.Router) {
+func (h *MessagesHandler) RegisterPublicRoutes(r chi.Router) {
 	r.Post("/messages", h.createMessage)
 	r.Get("/messages/{id}", h.getMessageByID)
+}
+
+func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Get("/messages", h.listMessages)
 	r.Patch("/messages/{id}/approve", h.approveMessage)
 }
