@@ -107,18 +107,18 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	messages, err := h.service.ListMessages(r.Context(), limit, offset)
+	msgs, err := h.service.ListMessages(r.Context(), limit, offset)
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
 
-	response := make([]messageResponse, len(messages))
-	for i, msg := range messages {
+	msgs_response := make([]messageResponse, len(msgs))
+	for i, msg := range msgs {
 		response[i] = toMessageResponse(msg)
 	}
 
-	writeJSONResponse(w, http.StatusOK, response)
+	writeJSONResponse(w, http.StatusOK, msgs_response)
 }
 
 func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request) {
