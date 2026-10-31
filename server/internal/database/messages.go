@@ -75,7 +75,7 @@ func (s *MessageStore) CreateMessage(ctx context.Context, params messages.Create
 
 	msg, err := scanMessage(row)
 	if err != nil {
-		return &messages.Message{}, fmt.Errorf("insert message: %w", err)
+		return nil, fmt.Errorf("insert message: %w", err)
 	}
 
 	return &msg, nil
@@ -91,11 +91,11 @@ func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messa
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return &messages.Message{}, messages.ErrMessageNotFound
+		return nil, messages.ErrMessageNotFound
 	}
 
 	if err != nil {
-		return &messages.Message{}, fmt.Errorf("get message by id: %w", err)
+		return nil, fmt.Errorf("get message by id: %w", err)
 	}
 
 	return &msg, nil
@@ -112,11 +112,11 @@ func (s *MessageStore) UpdateMessageStatus(ctx context.Context, id uuid.UUID, ne
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return &messages.Message{}, messages.ErrMessageNotFound
+		return nil, messages.ErrMessageNotFound
 	}
 
 	if err != nil {
-		return &messages.Message{}, fmt.Errorf("update message status: %w", err)
+		return nil, fmt.Errorf("update message status: %w", err)
 	}
 
 	return &msg, nil
