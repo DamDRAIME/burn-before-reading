@@ -17,7 +17,7 @@ var (
 	ErrEmptySenderName   = errors.New("sender name cannot be empty")
 	ErrSenderNameTooLong = errors.New("sender name exceeds maximum length")
 
-	ErrMessageNotFound = errors.New("message not found")
+	ErrNotFound = errors.New("message not found")
 	ErrInvalidStatus   = errors.New("operation not allowed for the current message status")
 )
 

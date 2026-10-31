@@ -91,7 +91,7 @@ func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messa
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, messages.ErrMessageNotFound
+		return nil, messages.ErrNotFound
 	}
 
 	if err != nil {
@@ -112,7 +112,7 @@ func (s *MessageStore) UpdateMessageStatus(ctx context.Context, id uuid.UUID, ne
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, messages.ErrMessageNotFound
+		return nil, messages.ErrNotFound
 	}
 
 	if err != nil {
