@@ -115,7 +115,7 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 
 	msgs_response := make([]messageResponse, len(msgs))
 	for i, msg := range msgs {
-		response[i] = toMessageResponse(msg)
+		msgs_response[i] = toMessageResponse(msg)
 	}
 
 	writeJSONResponse(w, http.StatusOK, msgs_response)
