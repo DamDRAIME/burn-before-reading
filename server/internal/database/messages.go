@@ -112,11 +112,13 @@ func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messa
 
 
 func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to messages.Status) (*messages.Message, error) {
+	// Determine the timestamp column to set based on the target status
 	setTimestampColumn := ""
 	if column, ok := statusTimestampColumn[to]; ok {
 		setTimestampColumn += ", " + column + " = NOW()"
 	}
 
+	// Compare and swap in one atomic operation to ensure the status transition is safe and prevent race conditions
 	row := s.pool.QueryRow(
 		ctx,
 		`UPDATE messages SET status = $1`+setTimestampColumn+` WHERE id = $2 AND status = $3 RETURNING `+messageColumns,
@@ -129,6 +131,8 @@ func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		// No rows were updated, meaning the message was not found or the status did not match the expected 'from' status.
+		// Note that this follow-up check is separate from the update hence it may not reflect the exact state at the time of the update.
+		// but this is harmless as it only helps to distinguish between "not found" and "invalid status" errors.
 		var exists bool
 		err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1)`, id).Scan(&exists)
 		if err != nil {
