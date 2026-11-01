@@ -32,6 +32,7 @@ func (h *MessagesHandler) RegisterPublicRoutes(r chi.Router) {
 func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Get("/messages", h.listMessages)
 	r.Patch("/messages/{id}/approve", h.approveMessage)
+	r.Patch("/messages/{id}/reject", h.rejectMessage)
 }
 
 type messageResponse struct {
@@ -133,6 +134,23 @@ func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request)
 	}
 
 	msg, err := h.service.ApproveMessage(r.Context(), id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toMessageResponse(msg))
+}
+
+func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "Invalid message ID")
+		return
+	}
+
+	msg, err := h.service.RejectMessage(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return

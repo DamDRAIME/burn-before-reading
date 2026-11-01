@@ -94,7 +94,8 @@ func (s *Service) ListMessages(ctx context.Context, limit int, offset int) ([]*M
 
 func (s *Service) ApproveMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
 	return s.store.TransitionMessageStatus(ctx, id, StatusAwaitingApproval, StatusPending)
-	}
+}
 
-	return s.store.UpdateMessageStatus(ctx, id, StatusPending)
+func (s *Service) RejectMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionMessageStatus(ctx, id, StatusAwaitingApproval, StatusRejected)
 }
