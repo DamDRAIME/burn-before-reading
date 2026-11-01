@@ -10,10 +10,16 @@
 
 - [ ] SubmitMessage: set initial status (pending / awaiting_approval) based on source instead of always pending
 - [ ] Derive source from the caller's identity instead of hardcoding SourceWeb in createMessage
-- [ ] Add a reject route (StatusRejected)
-- [ ] Fix ApproveMessage race (read-then-write): replace UpdateMessageStatus with an atomic *TransitionStatus(id, from, to)* using `UPDATE ... WHERE id = $2 AND status = $3`; on no rows, look up the message to return ErrNotFound vs ErrInvalidStatus
-- [ ] Idem for RejectMessage
-- [ ] Set approved_at / claimed_at / printed_at on the matching transitions
+- [X] Add a reject route (StatusRejected)
+- [X] Fix ApproveMessage race (read-then-write): replace UpdateMessageStatus with an atomic *TransitionStatus(id, from, to)* using `UPDATE ... WHERE id = $2 AND status = $3`; on no rows, look up the message to return ErrNotFound vs ErrInvalidStatus
+- [X] Idem for RejectMessage
+- [X] Set approved_at / claimed_at / printed_at on the matching transitions
+- [ ] Add a RequeueMessage endpoint
+- [ ] Add printers's endpoints
+
+## Database
+- [ ] Add an index column
+- [ ] Add a last_updated_at column with a trigger
 
 ## Printer side
 
