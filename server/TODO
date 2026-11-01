@@ -35,7 +35,7 @@
 - [X] Map ErrInvalidStatus to 409 Conflict instead of 400
 - [X] Remove duplicate (dead) ErrNotFound case in handleError
 - [ ] Add a status filter to the list route (e.g. ?status=awaiting_approval) for the moderation queue
-- [ ] Dockerfile uses golang:1.23 but go.mod requires go 1.27: build fails
+- [ ] Update Dockerfile
 - [ ] Run `go mod tidy` (lib/pq appears unused; pgx is used)
 - [ ] Add tests for the service layer using a fake Store
 - [ ] Fill in the README "Server" section
