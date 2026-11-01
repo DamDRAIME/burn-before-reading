@@ -26,25 +26,42 @@ func NewMessagesHandler(service *messages.Service, logger *slog.Logger) *Message
 
 func (h *MessagesHandler) RegisterPublicRoutes(r chi.Router) {
 	r.Post("/messages", h.createMessage)
-	r.Get("/messages/{id}", h.getMessageByID)
+	r.Get("/messages/{id}", h.getMessageByID(func(msg *messages.Message) any {
+		return toMessagePublicResponse(msg)
+	}))
 }
 
 func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Get("/messages", h.listMessages)
+	r.Get("/messages/{id}", h.getMessageByID(func(msg *messages.Message) any {
+		return toMessageAdminResponse(msg)
+	}))
 	r.Patch("/messages/{id}/approve", h.approveMessage)
 	r.Patch("/messages/{id}/reject", h.rejectMessage)
 }
 
-type messageResponse struct {
+type messagePublicResponse struct {
 	ID             uuid.UUID  `json:"id"`
-	SequenceNumber int        `json:"sequence_number"`
+	SequenceNumber int64      `json:"sequence_number"`
+	SenderName     string     `json:"sender_name"`
+	Content        string     `json:"content"`
+	Status         string     `json:"status"`
+	CreatedAt      time.Time  `json:"created_at"`
+	ModeratedAt    *time.Time `json:"moderated_at,omitempty"`
+	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
+	PrintedAt      *time.Time `json:"printed_at,omitempty"`
+}
+
+type messageAdminResponse struct {
+	ID             uuid.UUID  `json:"id"`
+	SequenceNumber int64      `json:"sequence_number"`
 	SenderName     string     `json:"sender_name"`
 	SenderIP       *net.IP    `json:"sender_ip,omitempty"`
 	Source         string     `json:"source"`
 	Content        string     `json:"content"`
 	Status         string     `json:"status"`
 	CreatedAt      time.Time  `json:"created_at"`
-	ApprovedAt     *time.Time `json:"approved_at,omitempty"`
+	ModeratedAt    *time.Time `json:"moderated_at,omitempty"`
 	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
 	PrintedAt      *time.Time `json:"printed_at,omitempty"`
 	Attempts       int        `json:"attempts"`
@@ -88,24 +105,25 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSONResponse(w, http.StatusCreated, toMessageResponse(msg))
+	writeJSONResponse(w, http.StatusCreated, toMessagePublicResponse(msg))
 }
 
-func (h *MessagesHandler) getMessageByID(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "Invalid message ID")
-		return
-	}
+func (h *MessagesHandler) getMessageByID(toResponse func(*messages.Message) any) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErrorResponse(w, http.StatusBadRequest, "Invalid message ID")
+			return
+		}
 
-	msg, err := h.service.GetMessageByID(r.Context(), id)
-	if err != nil {
-		h.handleError(w, err)
-		return
-	}
+		msg, err := h.service.GetMessageByID(r.Context(), id)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
 
-	writeJSONResponse(w, http.StatusOK, toMessageResponse(msg))
+		writeJSONResponse(w, http.StatusOK, toResponse(msg))
+	}
 }
 
 func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
@@ -118,9 +136,9 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msgs_response := make([]messageResponse, len(msgs))
+	msgs_response := make([]messageAdminResponse, len(msgs))
 	for i, msg := range msgs {
-		msgs_response[i] = toMessageResponse(msg)
+		msgs_response[i] = toMessageAdminResponse(msg)
 	}
 
 	writeJSONResponse(w, http.StatusOK, msgs_response)
@@ -140,7 +158,7 @@ func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, toMessageResponse(msg))
+	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
 }
 
 func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) {
@@ -157,11 +175,25 @@ func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, toMessageResponse(msg))
+	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
 }
 
-func toMessageResponse(msg *messages.Message) messageResponse {
-	return messageResponse{
+func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
+	return messagePublicResponse{
+		ID:             msg.ID,
+		SequenceNumber: msg.SequenceNumber,
+		SenderName:     msg.SenderName,
+		Content:        msg.Content,
+		Status:         string(msg.Status),
+		CreatedAt:      msg.CreatedAt,
+		ModeratedAt:    msg.ModeratedAt,
+		ClaimedAt:      msg.ClaimedAt,
+		PrintedAt:      msg.PrintedAt,
+	}
+}
+
+func toMessageAdminResponse(msg *messages.Message) messageAdminResponse {
+	return messageAdminResponse{
 		ID:             msg.ID,
 		SequenceNumber: msg.SequenceNumber,
 		SenderName:     msg.SenderName,
@@ -170,7 +202,7 @@ func toMessageResponse(msg *messages.Message) messageResponse {
 		Content:        msg.Content,
 		Status:         string(msg.Status),
 		CreatedAt:      msg.CreatedAt,
-		ApprovedAt:     msg.ApprovedAt,
+		ModeratedAt:    msg.ModeratedAt,
 		ClaimedAt:      msg.ClaimedAt,
 		PrintedAt:      msg.PrintedAt,
 		Attempts:       msg.Attempts,

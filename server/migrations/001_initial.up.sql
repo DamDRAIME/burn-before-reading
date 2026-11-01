@@ -33,7 +33,7 @@ CREATE TABLE messages (
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    approved_at TIMESTAMPTZ,
+    moderated_at TIMESTAMPTZ,
     claimed_at TIMESTAMPTZ,
     printed_at TIMESTAMPTZ,
 

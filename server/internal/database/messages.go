@@ -26,7 +26,8 @@ var _ messages.Store = (*MessageStore)(nil)
 // statusTimestampColumn maps a target status to the timestamp column stamped on entry.
 // Column names can't be bound as query parameters, so they come only from this fixed map.
 var statusTimestampColumn = map[messages.Status]string{
-	messages.StatusPending:  "approved_at",
+	messages.StatusPending:  "moderated_at",
+	messages.StatusRejected: "moderated_at",
 	messages.StatusPrinting: "claimed_at",
 	messages.StatusPrinted:  "printed_at",
 }
@@ -40,7 +41,7 @@ const messageColumns = `
 	content,
 	status,
 	created_at,
-	approved_at,
+	moderated_at,
 	claimed_at,
 	printed_at,
 	attempts,
@@ -60,7 +61,7 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.Content,
 		&msg.Status,
 		&msg.CreatedAt,
-		&msg.ApprovedAt,
+		&msg.ModeratedAt,
 		&msg.ClaimedAt,
 		&msg.PrintedAt,
 		&msg.Attempts,
@@ -110,8 +111,6 @@ func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messa
 
 	return &msg, nil
 }
-
-
 
 func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to messages.Status) (*messages.Message, error) {
 	// Determine the timestamp column to set based on the target status
