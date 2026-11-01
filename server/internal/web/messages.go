@@ -36,19 +36,20 @@ func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 }
 
 type messageResponse struct {
-	ID         uuid.UUID  `json:"id"`
-	SenderName string     `json:"sender_name"`
-	SenderIP   *net.IP    `json:"sender_ip,omitempty"`
-	Source     string     `json:"source"`
-	Content    string     `json:"content"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
-	ApprovedAt *time.Time `json:"approved_at,omitempty"`
-	ClaimedAt  *time.Time `json:"claimed_at,omitempty"`
-	PrintedAt  *time.Time `json:"printed_at,omitempty"`
-	Attempts   int        `json:"attempts"`
-	LastError  *string    `json:"last_error,omitempty"`
-	PrinterID  *uuid.UUID `json:"printer_id,omitempty"`
+	ID             uuid.UUID  `json:"id"`
+	SequenceNumber int        `json:"sequence_number"`
+	SenderName     string     `json:"sender_name"`
+	SenderIP       *net.IP    `json:"sender_ip,omitempty"`
+	Source         string     `json:"source"`
+	Content        string     `json:"content"`
+	Status         string     `json:"status"`
+	CreatedAt      time.Time  `json:"created_at"`
+	ApprovedAt     *time.Time `json:"approved_at,omitempty"`
+	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
+	PrintedAt      *time.Time `json:"printed_at,omitempty"`
+	Attempts       int        `json:"attempts"`
+	LastError      *string    `json:"last_error,omitempty"`
+	PrinterID      *uuid.UUID `json:"printer_id,omitempty"`
 }
 
 func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) {
@@ -161,19 +162,20 @@ func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) 
 
 func toMessageResponse(msg *messages.Message) messageResponse {
 	return messageResponse{
-		ID:         msg.ID,
-		SenderName: msg.SenderName,
-		SenderIP:   msg.SenderIP,
-		Source:     string(msg.Source),
-		Content:    msg.Content,
-		Status:     string(msg.Status),
-		CreatedAt:  msg.CreatedAt,
-		ApprovedAt: msg.ApprovedAt,
-		ClaimedAt:  msg.ClaimedAt,
-		PrintedAt:  msg.PrintedAt,
-		Attempts:   msg.Attempts,
-		LastError:  msg.LastError,
-		PrinterID:  msg.PrinterID,
+		ID:             msg.ID,
+		SequenceNumber: msg.SequenceNumber,
+		SenderName:     msg.SenderName,
+		SenderIP:       msg.SenderIP,
+		Source:         string(msg.Source),
+		Content:        msg.Content,
+		Status:         string(msg.Status),
+		CreatedAt:      msg.CreatedAt,
+		ApprovedAt:     msg.ApprovedAt,
+		ClaimedAt:      msg.ClaimedAt,
+		PrintedAt:      msg.PrintedAt,
+		Attempts:       msg.Attempts,
+		LastError:      msg.LastError,
+		PrinterID:      msg.PrinterID,
 	}
 }
 

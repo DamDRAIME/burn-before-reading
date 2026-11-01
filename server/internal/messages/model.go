@@ -28,7 +28,8 @@ const (
 )
 
 type Message struct {
-	ID uuid.UUID
+	ID             uuid.UUID
+	SequenceNumber int64
 
 	SenderName string
 	SenderIP   *net.IP

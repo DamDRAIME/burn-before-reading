@@ -33,6 +33,7 @@ var statusTimestampColumn = map[messages.Status]string{
 
 const messageColumns = `
 	id,
+	sequence_number,
 	sender_name,
 	sender_ip,
 	source,
@@ -52,6 +53,7 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 
 	err := row.Scan(
 		&msg.ID,
+		&msg.SequenceNumber,
 		&msg.SenderName,
 		&msg.SenderIP,
 		&msg.Source,

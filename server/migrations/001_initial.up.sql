@@ -22,6 +22,7 @@ CREATE TABLE printers (
 
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sequence_number BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
 
     sender_name VARCHAR(20) NOT NULL,
     sender_ip INET NOT NULL,
