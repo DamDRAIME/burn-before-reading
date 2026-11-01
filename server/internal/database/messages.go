@@ -23,6 +23,14 @@ func NewMessageStore(pool *pgxpool.Pool) *MessageStore {
 // Compile-time check to ensure MessageStore implements the messages.Store interface
 var _ messages.Store = (*MessageStore)(nil)
 
+// statusTimestampColumn maps a target status to the timestamp column stamped on entry.
+// Column names can't be bound as query parameters, so they come only from this fixed map.
+var statusTimestampColumn = map[messages.Status]string{
+	messages.StatusPending:  "approved_at",
+	messages.StatusPrinting: "claimed_at",
+	messages.StatusPrinted:  "printed_at",
+}
+
 const messageColumns = `
 	id,
 	sender_name,
@@ -101,22 +109,39 @@ func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messa
 	return &msg, nil
 }
 
-func (s *MessageStore) UpdateMessageStatus(ctx context.Context, id uuid.UUID, newStatus messages.Status) (*messages.Message, error) {
+
+
+func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to messages.Status) (*messages.Message, error) {
+	setTimestampColumn := ""
+	if column, ok := statusTimestampColumn[to]; ok {
+		setTimestampColumn += ", " + column + " = NOW()"
+	}
+
 	row := s.pool.QueryRow(
 		ctx,
-		`UPDATE messages SET status = $1 WHERE id = $2 RETURNING `+messageColumns,
-		newStatus,
+		`UPDATE messages SET status = $1`+setTimestampColumn+` WHERE id = $2 AND status = $3 RETURNING `+messageColumns,
+		to,
 		id,
+		from,
 	)
 
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, messages.ErrNotFound
+		// No rows were updated, meaning the message was not found or the status did not match the expected 'from' status.
+		var exists bool
+		err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1)`, id).Scan(&exists)
+		if err != nil {
+			return nil, fmt.Errorf("transition message status: %w", err)
+		}
+		if !exists {
+			return nil, messages.ErrNotFound
+		}
+		return nil, messages.ErrInvalidStatus
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("update message status: %w", err)
+		return nil, fmt.Errorf("transition message status: %w", err)
 	}
 
 	return &msg, nil

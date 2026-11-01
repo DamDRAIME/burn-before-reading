@@ -93,13 +93,7 @@ func (s *Service) ListMessages(ctx context.Context, limit int, offset int) ([]*M
 // -- Updating message status ----
 
 func (s *Service) ApproveMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
-	msg, err := s.store.GetMessageByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if msg.Status != StatusAwaitingApproval {
-		return nil, ErrInvalidStatus
+	return s.store.TransitionMessageStatus(ctx, id, StatusAwaitingApproval, StatusPending)
 	}
 
 	return s.store.UpdateMessageStatus(ctx, id, StatusPending)
