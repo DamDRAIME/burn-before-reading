@@ -12,6 +12,7 @@ type Status string
 const (
 	StatusAwaitingApproval Status = "awaiting_approval"
 	StatusPending          Status = "pending"
+	StatusClaimed          Status = "claimed"
 	StatusPrinting         Status = "printing"
 	StatusPrinted          Status = "printed"
 	StatusRejected         Status = "rejected"

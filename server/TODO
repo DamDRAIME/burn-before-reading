@@ -23,7 +23,7 @@
 
 ## Printer side
 
-- [ ] Add StatusClaimed to the Go model (exists in the DB constraint)
+- [X] Add StatusClaimed to the Go model (exists in the DB constraint)
 - [ ] Printer store/service (the `printers` table is unused)
 - [ ] Atomic claim endpoint: `FOR UPDATE SKIP LOCKED`, set printer_id, claimed_at, attempts+1
 - [ ] Status reporting endpoints: printing -> printed, or failed with last_error
