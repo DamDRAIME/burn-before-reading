@@ -44,6 +44,7 @@ const messageColumns = `
 	moderated_at,
 	claimed_at,
 	printed_at,
+	last_updated_at,
 	attempts,
 	last_error,
 	printer_id
@@ -64,6 +65,7 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.ModeratedAt,
 		&msg.ClaimedAt,
 		&msg.PrintedAt,
+		&msg.LastUpdatedAt,
 		&msg.Attempts,
 		&msg.LastError,
 		&msg.PrinterID,

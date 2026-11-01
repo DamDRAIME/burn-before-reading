@@ -39,10 +39,11 @@ type Message struct {
 
 	Status Status
 
-	CreatedAt   time.Time
-	ModeratedAt *time.Time
-	ClaimedAt   *time.Time
-	PrintedAt   *time.Time
+	CreatedAt     time.Time
+	ModeratedAt   *time.Time
+	ClaimedAt     *time.Time
+	PrintedAt     *time.Time
+	LastUpdatedAt time.Time
 
 	Attempts  int
 	LastError *string

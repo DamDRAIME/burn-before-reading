@@ -1,2 +1,3 @@
 DROP TABLE IF EXISTS messages CASCADE;
 DROP TABLE IF EXISTS printers CASCADE;
+DROP FUNCTION IF EXISTS set_last_updated_at();

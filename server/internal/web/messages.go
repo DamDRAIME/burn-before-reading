@@ -51,6 +51,7 @@ type messagePublicResponse struct {
 	ModeratedAt    *time.Time `json:"moderated_at,omitempty"`
 	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
 	PrintedAt      *time.Time `json:"printed_at,omitempty"`
+	LastUpdatedAt  time.Time  `json:"last_updated_at,omitempty"`
 }
 
 type messageAdminResponse struct {
@@ -65,6 +66,7 @@ type messageAdminResponse struct {
 	ModeratedAt    *time.Time `json:"moderated_at,omitempty"`
 	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
 	PrintedAt      *time.Time `json:"printed_at,omitempty"`
+	LastUpdatedAt  time.Time  `json:"last_updated_at,omitempty"`
 	Attempts       int        `json:"attempts"`
 	LastError      *string    `json:"last_error,omitempty"`
 	PrinterID      *uuid.UUID `json:"printer_id,omitempty"`
@@ -206,6 +208,7 @@ func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
 		ModeratedAt:    msg.ModeratedAt,
 		ClaimedAt:      msg.ClaimedAt,
 		PrintedAt:      msg.PrintedAt,
+		LastUpdatedAt:  msg.LastUpdatedAt,
 	}
 }
 
@@ -225,6 +228,7 @@ func toMessageAdminResponse(msg *messages.Message) messageAdminResponse {
 		Attempts:       msg.Attempts,
 		LastError:      msg.LastError,
 		PrinterID:      msg.PrinterID,
+		LastUpdatedAt:  msg.LastUpdatedAt,
 	}
 }
 

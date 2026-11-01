@@ -1,3 +1,14 @@
+-- Define a trigger to automatically update the last_updated_at column before any update operation
+CREATE OR REPLACE FUNCTION set_last_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.last_updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Printers Table
+
 CREATE TABLE printers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(20) NOT NULL,
@@ -19,6 +30,7 @@ CREATE TABLE printers (
     )
 );
 
+-- Messages Table
 
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -36,6 +48,7 @@ CREATE TABLE messages (
     moderated_at TIMESTAMPTZ,
     claimed_at TIMESTAMPTZ,
     printed_at TIMESTAMPTZ,
+    last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     attempts SMALLINT NOT NULL DEFAULT 0,
     last_error TEXT,
@@ -66,3 +79,9 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_pending
     ON messages (created_at)
     WHERE status = 'pending';
+
+CREATE TRIGGER trg_messages_last_updated_at
+    BEFORE UPDATE ON messages
+    FOR EACH ROW
+    WHEN (OLD.* IS DISTINCT FROM NEW.*)
+    EXECUTE FUNCTION set_last_updated_at();
