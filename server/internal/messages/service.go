@@ -99,3 +99,7 @@ func (s *Service) ApproveMessage(ctx context.Context, id uuid.UUID) (*Message, e
 func (s *Service) RejectMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
 	return s.store.TransitionMessageStatus(ctx, id, StatusAwaitingApproval, StatusRejected)
 }
+
+func (s *Service) RequeueMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionMessageStatus(ctx, id, StatusFailed, StatusPending)
+}

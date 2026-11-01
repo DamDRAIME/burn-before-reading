@@ -38,6 +38,7 @@ func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 	}))
 	r.Patch("/messages/{id}/approve", h.approveMessage)
 	r.Patch("/messages/{id}/reject", h.rejectMessage)
+	r.Patch("/messages/{id}/requeue", h.requeueMessage)
 }
 
 type messagePublicResponse struct {
@@ -79,7 +80,7 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
 
 	if err := decoder.Decode(&req); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
@@ -108,11 +109,27 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 	writeJSONResponse(w, http.StatusCreated, toMessagePublicResponse(msg))
 }
 
+func (h *MessagesHandler) requeueMessage(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
+		return
+	}
+
+	msg, err := h.service.RequeueMessage(r.Context(), id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
+}
+
 func (h *MessagesHandler) getMessageByID(toResponse func(*messages.Message) any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
-			writeErrorResponse(w, http.StatusBadRequest, "Invalid message ID")
+			writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
 			return
 		}
 
@@ -148,7 +165,7 @@ func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request)
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "Invalid message ID")
+		writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
 		return
 	}
 
@@ -165,7 +182,7 @@ func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) 
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "Invalid message ID")
+		writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
 		return
 	}
 
