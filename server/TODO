@@ -32,7 +32,7 @@
 
 ## Smaller fixes
 
-- [ ] Map ErrInvalidStatus to 409 Conflict instead of 400
+- [X] Map ErrInvalidStatus to 409 Conflict instead of 400
 - [X] Remove duplicate (dead) ErrNotFound case in handleError
 - [ ] Add a status filter to the list route (e.g. ?status=awaiting_approval) for the moderation queue
 - [ ] Dockerfile uses golang:1.23 but go.mod requires go 1.27: build fails

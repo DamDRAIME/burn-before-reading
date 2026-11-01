@@ -182,7 +182,7 @@ func (h *MessagesHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, messages.ErrNotFound):
 		writeErrorResponse(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, messages.ErrInvalidStatus):
-		writeErrorResponse(w, http.StatusBadRequest, err.Error())
+		writeErrorResponse(w, http.StatusConflict, err.Error())
 	default:
 		h.logger.Error("internal server error", "error", err)
 		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
