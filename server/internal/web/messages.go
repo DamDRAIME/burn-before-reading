@@ -41,6 +41,14 @@ func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Patch("/messages/{id}/requeue", h.requeueMessage)
 }
 
+func (h *MessagesHandler) RegisterPrinterRoutes(r chi.Router) {
+	r.Post("/{id}/messages/oldest/claim", h.claimOldestMessage)
+	r.Patch("/messages/{id}/claim", h.claimMessage)
+	r.Patch("/messages/{id}/printing", h.printingMessage)
+	r.Patch("/messages/{id}/printed", h.printedMessage)
+	r.Patch("/messages/{id}/failed", h.failedMessage)
+}
+
 type messagePublicResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	SequenceNumber int64      `json:"sequence_number"`
@@ -69,13 +77,14 @@ type messageAdminResponse struct {
 	LastUpdatedAt  time.Time  `json:"last_updated_at,omitempty"`
 	Attempts       int        `json:"attempts"`
 	LastError      *string    `json:"last_error,omitempty"`
-	PrinterID      *uuid.UUID `json:"printer_id,omitempty"`
+	PrinterID      uuid.UUID  `json:"printer_id,omitempty"`
 }
 
 func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Sender string `json:"sender"`
-		Body   string `json:"body"`
+		Sender    string `json:"sender"`
+		Body      string `json:"body"`
+		PrinterID string `json:"printer_id"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
 	decoder := json.NewDecoder(r.Body)
@@ -95,7 +104,14 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 		senderIP = net.ParseIP(host)
 	}
 
+	printerID, err := uuid.Parse(req.PrinterID)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid printer ID")
+		return
+	}
+
 	submitParams := messages.SubmitMessageParams{
+		PrinterID:  printerID,
 		SenderName: req.Sender,
 		SenderIP:   &senderIP,
 		Source:     messages.SourceWeb,
@@ -112,9 +128,8 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *MessagesHandler) requeueMessage(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
+	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+	if !ok {
 		return
 	}
 
@@ -129,9 +144,8 @@ func (h *MessagesHandler) requeueMessage(w http.ResponseWriter, r *http.Request)
 
 func (h *MessagesHandler) getMessageByID(toResponse func(*messages.Message) any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := uuid.Parse(chi.URLParam(r, "id"))
-		if err != nil {
-			writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
+		id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+		if !ok {
 			return
 		}
 
@@ -164,10 +178,8 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
+	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+	if !ok {
 		return
 	}
 
@@ -181,10 +193,8 @@ func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "invalid message ID")
+	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+	if !ok {
 		return
 	}
 
@@ -195,6 +205,101 @@ func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
+}
+
+func (h *MessagesHandler) printingMessage(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+	if !ok {
+		return
+	}
+
+	msg, err := h.service.PrintingMessage(r.Context(), id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
+}
+
+func (h *MessagesHandler) printedMessage(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+	if !ok {
+		return
+	}
+
+	msg, err := h.service.PrintedMessage(r.Context(), id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
+}
+
+func (h *MessagesHandler) failedMessage(w http.ResponseWriter, r *http.Request) {
+	msg_id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+	if !ok {
+		return
+	}
+
+	var req struct {
+		ErrorMsg string `json:"error"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
+
+	if err := decoder.Decode(&req); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	msg, err := h.service.FailedMessage(r.Context(), msg_id, req.ErrorMsg)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
+}
+
+func (h *MessagesHandler) claimMessage(w http.ResponseWriter, r *http.Request) {
+	printer_id, ok := parseUUIDParam(w, r, "printer_id", "invalid printer ID")
+	if !ok {
+		return
+	}
+	msg_id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+	if !ok {
+		return
+	}
+
+	msg, err := h.service.ClaimMessage(r.Context(), msg_id, printer_id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
+}
+
+func (h *MessagesHandler) claimOldestMessage(w http.ResponseWriter, r *http.Request) {
+	printer_id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	if !ok {
+		return
+	}
+
+	msg, err := h.service.ClaimOldestMessage(r.Context(), printer_id)
+	if err != nil {
+		if errors.Is(err, messages.ErrNotFound) {
+			w.WriteHeader(http.StatusNoContent) // Queue is empty
+			return
+		}
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
 }
 
 func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
@@ -230,6 +335,15 @@ func toMessageAdminResponse(msg *messages.Message) messageAdminResponse {
 		PrinterID:      msg.PrinterID,
 		LastUpdatedAt:  msg.LastUpdatedAt,
 	}
+}
+
+func parseUUIDParam(w http.ResponseWriter, r *http.Request, param string, errMsg string) (uuid.UUID, bool) {
+	id, err := uuid.Parse(chi.URLParam(r, param))
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, errMsg)
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 func writeJSONResponse(w http.ResponseWriter, statusCode int, v any) {

@@ -17,8 +17,8 @@ var (
 	ErrEmptySenderName   = errors.New("sender name cannot be empty")
 	ErrSenderNameTooLong = errors.New("sender name exceeds maximum length")
 
-	ErrNotFound = errors.New("message not found")
-	ErrInvalidStatus   = errors.New("operation not allowed for the current message status")
+	ErrNotFound      = errors.New("message not found")
+	ErrInvalidStatus = errors.New("operation not allowed for the current message status")
 )
 
 const (
@@ -37,6 +37,7 @@ func NewService(store Store) *Service {
 // -- Submitting a new message ----
 
 type SubmitMessageParams struct {
+	PrinterID  uuid.UUID
 	SenderName string
 	SenderIP   *net.IP
 	Source     Source
@@ -62,6 +63,7 @@ func (s *Service) SubmitMessage(ctx context.Context, params SubmitMessageParams)
 	}
 
 	messageParams := CreateMessageParams{
+		PrinterID:  params.PrinterID,
 		SenderName: senderName,
 		SenderIP:   params.SenderIP,
 		Source:     params.Source,
@@ -102,4 +104,26 @@ func (s *Service) RejectMessage(ctx context.Context, id uuid.UUID) (*Message, er
 
 func (s *Service) RequeueMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
 	return s.store.TransitionMessageStatus(ctx, id, StatusFailed, StatusPending)
+}
+
+func (s *Service) PrintingMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionMessageStatus(ctx, id, StatusClaimed, StatusPrinting)
+}
+
+func (s *Service) PrintedMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionMessageStatus(ctx, id, StatusPrinting, StatusPrinted)
+}
+
+func (s *Service) FailedMessage(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error) {
+	return s.store.FailedMessage(ctx, id, errorMsg)
+}
+
+// -- Claiming messages ----
+
+func (s *Service) ClaimMessage(ctx context.Context, id uuid.UUID, printerID uuid.UUID) (*Message, error) {
+	return s.store.ClaimMessage(ctx, id, printerID)
+}
+
+func (s *Service) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*Message, error) {
+	return s.store.ClaimOldestMessage(ctx, printerID)
 }

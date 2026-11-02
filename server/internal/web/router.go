@@ -11,5 +11,8 @@ func NewAPIRouter(msgHandler *MessagesHandler, adminToken string) chi.Router {
 		r.Use(RequireAdminToken(adminToken))
 		msgHandler.RegisterAdminRoutes(r)
 	})
+	r.Route("/printer", func(r chi.Router) {
+		msgHandler.RegisterPrinterRoutes(r)
+	})
 	return r
 }

@@ -48,5 +48,5 @@ type Message struct {
 	Attempts  int
 	LastError *string
 
-	PrinterID *uuid.UUID
+	PrinterID uuid.UUID
 }

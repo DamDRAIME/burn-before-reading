@@ -15,9 +15,16 @@ type Store interface {
 	TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to Status) (*Message, error)
 
 	ListMessages(ctx context.Context, limit int, offset int) ([]*Message, error)
+
+	FailedMessage(ctx context.Context, id uuid.UUID, error string) (*Message, error)
+
+	ClaimMessage(ctx context.Context, id uuid.UUID, printer_id uuid.UUID) (*Message, error)
+
+	ClaimOldestMessage(ctx context.Context, printer_id uuid.UUID) (*Message, error)
 }
 
 type CreateMessageParams struct {
+	PrinterID  uuid.UUID
 	SenderName string
 	SenderIP   *net.IP
 	Source     Source

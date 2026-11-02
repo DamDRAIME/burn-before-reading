@@ -9,13 +9,14 @@
 ## Approval flow
 
 - [ ] SubmitMessage: set initial status (pending / awaiting_approval) based on source instead of always pending
+- [ ] CreateMessage: Validate PrinterID
 - [ ] Derive source from the caller's identity instead of hardcoding SourceWeb in createMessage
 - [X] Add a reject route (StatusRejected)
 - [X] Fix ApproveMessage race (read-then-write): replace UpdateMessageStatus with an atomic *TransitionStatus(id, from, to)* using `UPDATE ... WHERE id = $2 AND status = $3`; on no rows, look up the message to return ErrNotFound vs ErrInvalidStatus
 - [X] Idem for RejectMessage
 - [X] Set approved_at / claimed_at / printed_at on the matching transitions
 - [X] Add a RequeueMessage endpoint
-- [ ] Add printers's endpoints
+- [X] Add printers's endpoints
 
 ## Database
 - [X] Add an index column
@@ -25,7 +26,7 @@
 
 - [X] Add StatusClaimed to the Go model (exists in the DB constraint)
 - [ ] Printer store/service (the `printers` table is unused)
-- [ ] Atomic claim endpoint: `FOR UPDATE SKIP LOCKED`, set printer_id, claimed_at, attempts+1
+- [X] Atomic claim endpoint: `FOR UPDATE SKIP LOCKED`, set printer_id, claimed_at, attempts+1
 - [ ] Status reporting endpoints: printing -> printed, or failed with last_error
 - [ ] Heartbeat endpoint updating printers.last_seen_at / last_job_at
 - [ ] Recover stuck claims: back to pending after a timeout, give up after max attempts

@@ -32,6 +32,9 @@ var statusTimestampColumn = map[messages.Status]string{
 	messages.StatusPrinted:  "printed_at",
 }
 
+// maxAttempts is the number of print attempts after which a failed message is no longer retried.
+const maxAttempts = 3
+
 const messageColumns = `
 	id,
 	sequence_number,
@@ -74,16 +77,33 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 	return msg, err
 }
 
+// resolveNoRowsUpdated is called when a conditional update on a message matched no rows,
+// to distinguish a missing message (i.e.: wrong ID) from one whose current status didn't allow the update.
+// The check runs separately from the update, so it may not reflect the exact state at update time;
+// this is harmless as it only picks which error to report.
+func (s *MessageStore) resolveNoRowsUpdated(ctx context.Context, id uuid.UUID, errorPrefix string) error {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1)`, id).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("%s: %w", errorPrefix, err)
+	}
+	if !exists {
+		return messages.ErrNotFound
+	}
+	return messages.ErrInvalidStatus
+}
+
 func (s *MessageStore) CreateMessage(ctx context.Context, params messages.CreateMessageParams) (*messages.Message, error) {
 
 	row := s.pool.QueryRow(
 		ctx,
-		`INSERT INTO messages (sender_name, sender_ip, source, content, status) VALUES ($1, $2, $3, $4, $5) RETURNING `+messageColumns,
+		`INSERT INTO messages (sender_name, sender_ip, source, content, status, printer_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+messageColumns,
 		params.SenderName,
 		params.SenderIP,
 		params.Source,
 		params.Content,
 		params.Status,
+		params.PrinterID,
 	)
 
 	msg, err := scanMessage(row)
@@ -133,18 +153,7 @@ func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		// No rows were updated, meaning the message was not found or the status did not match the expected 'from' status.
-		// Note that this follow-up check is separate from the update hence it may not reflect the exact state at the time of the update.
-		// but this is harmless as it only helps to distinguish between "not found" and "invalid status" errors.
-		var exists bool
-		err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1)`, id).Scan(&exists)
-		if err != nil {
-			return nil, fmt.Errorf("transition message status: %w", err)
-		}
-		if !exists {
-			return nil, messages.ErrNotFound
-		}
-		return nil, messages.ErrInvalidStatus
+		return nil, s.resolveNoRowsUpdated(ctx, id, "transition message status")
 	}
 
 	if err != nil {
@@ -175,4 +184,97 @@ func (s *MessageStore) ListMessages(ctx context.Context, limit int, offset int) 
 	}
 
 	return msgs, nil
+}
+
+func (s *MessageStore) FailedMessage(ctx context.Context, id uuid.UUID, errorMsg string) (*messages.Message, error) {
+	row := s.pool.QueryRow(
+		ctx,
+		`UPDATE messages
+		SET status = CASE WHEN attempts < $1 THEN $2 ELSE $3 END,
+			last_error = $4
+		WHERE id = $5 AND status = ANY($6)
+		RETURNING `+messageColumns,
+		maxAttempts,
+		messages.StatusPending,
+		messages.StatusFailed,
+		errorMsg,
+		id,
+		[]messages.Status{messages.StatusClaimed, messages.StatusPrinting},
+	)
+
+	msg, err := scanMessage(row)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, s.resolveNoRowsUpdated(ctx, id, "failed message")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed message: %w", err)
+	}
+
+	return &msg, nil
+}
+
+func (s *MessageStore) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*messages.Message, error) {
+	row := s.pool.QueryRow(
+		ctx,
+		`UPDATE messages
+		SET status = $1,
+			claimed_at = NOW(),
+			attempts = attempts + 1
+		WHERE id = (
+			SELECT id
+			FROM messages
+			WHERE status = $3 AND printer_id = $2
+			ORDER BY created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING `+messageColumns,
+		messages.StatusClaimed,
+		printerID,
+		messages.StatusPending,
+	)
+
+	msg, err := scanMessage(row)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		// No pending message available (or all candidates are currently locked by other claimers).
+		return nil, messages.ErrNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("claim oldest message: %w", err)
+	}
+
+	return &msg, nil
+}
+
+func (s *MessageStore) ClaimMessage(ctx context.Context, id uuid.UUID, printerID uuid.UUID) (*messages.Message, error) {
+	row := s.pool.QueryRow(
+		ctx,
+		`UPDATE messages
+		SET status = $1,
+			printer_id = $2,
+			claimed_at = NOW(),
+			attempts = attempts + 1
+		WHERE id = $3 AND status = $4
+		RETURNING `+messageColumns,
+		messages.StatusClaimed,
+		printerID,
+		id,
+		messages.StatusPending,
+	)
+
+	msg, err := scanMessage(row)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, s.resolveNoRowsUpdated(ctx, id, "claim message")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("claim message: %w", err)
+	}
+
+	return &msg, nil
 }

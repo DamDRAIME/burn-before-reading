@@ -12,6 +12,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE printers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(20) NOT NULL,
+    recipient_name VARCHAR(20) NOT NULL,
 
     status VARCHAR(20) NOT NULL DEFAULT 'active',
 
@@ -53,7 +54,7 @@ CREATE TABLE messages (
     attempts SMALLINT NOT NULL DEFAULT 0,
     last_error TEXT,
 
-    printer_id UUID REFERENCES printers(id),
+    printer_id UUID NOT NULL REFERENCES printers(id),
 
     CONSTRAINT messages_status_check CHECK (
         status IN (
