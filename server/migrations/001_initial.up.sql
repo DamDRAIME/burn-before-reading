@@ -11,25 +11,29 @@ $$ LANGUAGE plpgsql;
 
 CREATE TABLE printers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(20) NOT NULL,
+    
+    model VARCHAR(50) NOT NULL,
+
     recipient_name VARCHAR(20) NOT NULL,
 
-    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    quiet_start TIME,
+    quiet_end TIME,
+    timezone TEXT DEFAULT 'Europe/Brussels',
+
+    error TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at TIMESTAMPTZ,
-    last_job_at TIMESTAMPTZ,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    last_error TEXT,
-
-    CONSTRAINT printers_status_check CHECK (
-        status IN (
-            'active',
-            'inactive',
-            'sleeping'
-        )
-    )
+    CONSTRAINT printers_quiet_hours_check
+        CHECK ((quiet_start IS NULL) = (quiet_end IS NULL))
 );
+
+CREATE TRIGGER trg_printers_last_seen_at
+    BEFORE UPDATE ON printers
+    FOR EACH ROW
+    WHEN (OLD.* IS DISTINCT FROM NEW.*)
+    EXECUTE FUNCTION set_last_seen_at();
 
 -- Messages Table
 
@@ -80,6 +84,9 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_pending
     ON messages (created_at)
     WHERE status = 'pending';
+
+CREATE INDEX idx_messages_printer_id
+    ON messages (printer_id);
 
 CREATE TRIGGER trg_messages_last_updated_at
     BEFORE UPDATE ON messages
