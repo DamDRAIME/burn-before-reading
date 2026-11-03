@@ -337,25 +337,6 @@ func toMessageAdminResponse(msg *messages.Message) messageAdminResponse {
 	}
 }
 
-func parseUUIDParam(w http.ResponseWriter, r *http.Request, param string, errMsg string) (uuid.UUID, bool) {
-	id, err := uuid.Parse(chi.URLParam(r, param))
-	if err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, errMsg)
-		return uuid.Nil, false
-	}
-	return id, true
-}
-
-func writeJSONResponse(w http.ResponseWriter, statusCode int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(v)
-}
-
-func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
-	writeJSONResponse(w, statusCode, map[string]string{"error": message})
-}
-
 func (h *MessagesHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, messages.ErrEmptySenderName):
