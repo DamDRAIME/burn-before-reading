@@ -40,7 +40,7 @@ type SubmitPrinterParams struct {
 	RecipientName string
 	QuietStart    *time.Time
 	QuietEnd      *time.Time
-	Timezone      string
+	Timezone      *string
 }
 
 func validateTimezone(timezone *string) (string, bool) {
@@ -76,7 +76,7 @@ func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams)
 		return nil, ErrRecipientNameTooLong
 	}
 
-	timezone, ok := validateTimezone(&params.Timezone)
+	timezone, ok := validateTimezone(params.Timezone)
 	if !ok {
 		return nil, ErrInvalidTimezone
 	}
@@ -86,7 +86,7 @@ func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams)
 		RecipientName: recipientName,
 		QuietStart:    params.QuietStart,
 		QuietEnd:      params.QuietEnd,
-		Timezone:      timezone,
+		Timezone:      &timezone,
 	}
 
 	return s.store.CreatePrinter(ctx, printerParams)

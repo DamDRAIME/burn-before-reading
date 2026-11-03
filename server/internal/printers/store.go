@@ -28,7 +28,7 @@ type CreatePrinterParams struct {
 	RecipientName string
 	QuietStart    *time.Time
 	QuietEnd      *time.Time
-	Timezone      string
+	Timezone      *string
 }
 
 type UpdatePrinterParams struct {
