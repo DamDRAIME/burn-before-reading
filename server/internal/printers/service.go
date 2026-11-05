@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -17,7 +18,11 @@ var (
 	ErrEmptyRecipientName   = errors.New("recipient name cannot be empty")
 	ErrRecipientNameTooLong = errors.New("recipient name exceeds maximum length")
 
-	ErrInvalidTimezone = errors.New("invalid timezone")
+	ErrInvalidQuietHours = errors.New("quiet hours must have both start and end times")
+	ErrEqualQuietHours   = errors.New("quiet start and end times cannot be equal")
+	ErrInvalidTimezone   = errors.New("invalid timezone")
+
+	ErrInvalidCharacters = errors.New("text contains control characters")
 
 	ErrNotFound = errors.New("printer not found")
 )
@@ -39,8 +44,8 @@ func NewService(store Store) *Service {
 type SubmitPrinterParams struct {
 	Model         string
 	RecipientName string
-	QuietStart    *time.Time
-	QuietEnd      *time.Time
+	QuietStart    *TimeOfDay
+	QuietEnd      *TimeOfDay
 	Timezone      *string
 }
 
@@ -61,11 +66,14 @@ func normalizeTimezone(timezone *string) (string, bool) {
 
 func validateOptionalString(s *string, maxLength int, errEmpty, errTooLong error) (*string, error) {
 	if s == nil {
-		return nil, errEmpty
+		return nil, nil
 	}
 	trimmed := strings.TrimSpace(*s)
 	if trimmed == "" {
 		return nil, errEmpty
+	}
+	if strings.ContainsFunc(trimmed, unicode.IsControl) {
+		return nil, ErrInvalidCharacters
 	}
 	if utf8.RuneCountInString(trimmed) > maxLength {
 		return nil, errTooLong
@@ -79,10 +87,23 @@ func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams)
 	if err != nil {
 		return nil, err
 	}
+	if model == nil {
+		return nil, ErrEmptyModel
+	}
 
 	recipientName, err := validateOptionalString(&params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
 	if err != nil {
 		return nil, err
+	}
+	if recipientName == nil {
+		return nil, ErrEmptyRecipientName
+	}
+
+	if (params.QuietStart == nil && params.QuietEnd != nil) || (params.QuietStart != nil && params.QuietEnd == nil) {
+		return nil, ErrInvalidQuietHours
+	}
+	if params.QuietStart != nil && params.QuietEnd != nil && *params.QuietStart == *params.QuietEnd {
+		return nil, ErrEqualQuietHours
 	}
 
 	timezone, ok := normalizeTimezone(params.Timezone)
@@ -91,8 +112,8 @@ func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams)
 	}
 
 	printerParams := CreatePrinterParams{
-		Model:         model,
-		RecipientName: recipientName,
+		Model:         *model,
+		RecipientName: *recipientName,
 		QuietStart:    params.QuietStart,
 		QuietEnd:      params.QuietEnd,
 		Timezone:      &timezone,
@@ -121,11 +142,17 @@ func (s *Service) GetPrinterStats(ctx context.Context, id uuid.UUID) (*PrinterSt
 
 func (s *Service) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string) error {
 	if errorMsg != nil {
-		trimmed := strings.TrimSpace(*errorMsg)
-		if trimmed == "" {
+		cleaned := strings.Map(func(r rune) rune {
+			if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+				return r
+			}
+			return -1 // drop bad characters
+		}, *errorMsg)
+		cleaned = strings.TrimSpace(cleaned)
+		if cleaned == "" {
 			errorMsg = nil
 		} else {
-			errorMsg = &trimmed
+			errorMsg = &cleaned
 		}
 	}
 	return s.store.Heartbeat(ctx, id, errorMsg)
@@ -152,6 +179,13 @@ func (s *Service) SetQuietHours(ctx context.Context, id uuid.UUID, params QuietH
 	timezone, ok := normalizeTimezone(params.Timezone)
 	if !ok {
 		return nil, ErrInvalidTimezone
+	}
+
+	if params.QuietStart == nil || params.QuietEnd == nil {
+		return nil, ErrInvalidQuietHours
+	}
+	if *params.QuietStart == *params.QuietEnd {
+		return nil, ErrEqualQuietHours
 	}
 
 	return s.store.SetQuietHours(ctx, id, QuietHoursParams{

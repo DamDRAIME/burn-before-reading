@@ -7,10 +7,28 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"bbr/internal/printers"
 )
+
+const microsPerMinute = 60_000_000
+
+func toPgTime(t *printers.TimeOfDay) pgtype.Time {
+	if t == nil {
+		return pgtype.Time{} // NULL
+	}
+	return pgtype.Time{Microseconds: int64(t.Hour*60+t.Minute) * microsPerMinute, Valid: true}
+}
+
+func fromPgTime(v pgtype.Time) *printers.TimeOfDay {
+	if !v.Valid {
+		return nil
+	}
+	m := int(v.Microseconds / microsPerMinute)
+	return &printers.TimeOfDay{Hour: m / 60, Minute: m % 60}
+}
 
 type PrinterStore struct {
 	pool *pgxpool.Pool
@@ -32,23 +50,29 @@ const printerColumns = `
 	timezone,
 	error,
 	created_at,
-	last_seen_at
+	last_updated_at,
+	last_heartbeat_at
 `
 
 func scanPrinter(row pgx.Row) (printers.Printer, error) {
 	var p printers.Printer
+	var quietStart, quietEnd pgtype.Time
 
 	err := row.Scan(
 		&p.ID,
 		&p.Model,
 		&p.RecipientName,
-		&p.QuietStart,
-		&p.QuietEnd,
+		&quietStart,
+		&quietEnd,
 		&p.Timezone,
 		&p.Error,
 		&p.CreatedAt,
-		&p.LastSeenAt,
+		&p.LastUpdatedAt,
+		&p.LastHeartbeatAt,
 	)
+
+	p.QuietStart = fromPgTime(quietStart)
+	p.QuietEnd = fromPgTime(quietEnd)
 
 	return p, err
 }
@@ -60,8 +84,8 @@ func (s *PrinterStore) CreatePrinter(ctx context.Context, params printers.Create
 		`INSERT INTO printers (model, recipient_name, quiet_start, quiet_end, timezone) VALUES ($1, $2, $3, $4, $5) RETURNING `+printerColumns,
 		params.Model,
 		params.RecipientName,
-		params.QuietStart,
-		params.QuietEnd,
+		toPgTime(params.QuietStart),
+		toPgTime(params.QuietEnd),
 		params.Timezone,
 	)
 
@@ -120,20 +144,23 @@ func (s *PrinterStore) GetPrinterStats(ctx context.Context, id uuid.UUID) (*prin
 	row := s.pool.QueryRow(
 		ctx,
 		`SELECT
-			id,
+			p.id,
 			COUNT(*) FILTER (WHERE attempts > 0)        AS messages_claimed,
 			COUNT(*) FILTER (WHERE status = 'printed')  AS messages_printed,
 			COUNT(*) FILTER (WHERE status = 'failed')   AS messages_failed,
 			COALESCE(SUM(attempts), 0)                  AS print_attempts,
 			MAX(claimed_at)                             AS last_claimed_at,
 			MAX(printed_at)                             AS last_printed_at
-		FROM messages
-		WHERE printer_id = $1`,
+		FROM printers p
+		LEFT JOIN messages m ON p.id = m.printer_id
+		WHERE p.id = $1
+		GROUP BY p.id`,
 		id,
 	)
 
 	var stats printers.PrinterStats
 	err := row.Scan(
+		&stats.ID,
 		&stats.MessagesClaimed,
 		&stats.MessagesPrinted,
 		&stats.MessagesFailed,
@@ -141,6 +168,9 @@ func (s *PrinterStore) GetPrinterStats(ctx context.Context, id uuid.UUID) (*prin
 		&stats.LastClaimedAt,
 		&stats.LastPrintedAt,
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, printers.ErrNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get printer stats: %w", err)
 	}
@@ -152,7 +182,7 @@ func (s *PrinterStore) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *st
 	tag, err := s.pool.Exec(
 		ctx,
 		`UPDATE printers
-		SET last_seen_at = NOW(),
+		SET last_heartbeat_at = NOW(),
 			error = $1
 		WHERE id = $2
 		RETURNING `+printerColumns,
@@ -206,8 +236,8 @@ func (s *PrinterStore) SetQuietHours(ctx context.Context, id uuid.UUID, params p
 			timezone = $3
 		WHERE id = $4
 		RETURNING `+printerColumns,
-		params.QuietStart,
-		params.QuietEnd,
+		toPgTime(params.QuietStart),
+		toPgTime(params.QuietEnd),
 		params.Timezone,
 		id,
 	)

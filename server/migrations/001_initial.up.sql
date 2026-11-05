@@ -23,17 +23,22 @@ CREATE TABLE printers (
     error TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_heartbeat_at TIMESTAMPTZ,
 
     CONSTRAINT printers_quiet_hours_check
         CHECK ((quiet_start IS NULL) = (quiet_end IS NULL))
 );
 
-CREATE TRIGGER trg_printers_last_seen_at
+CREATE TRIGGER trg_printers_last_updated_at
     BEFORE UPDATE ON printers
     FOR EACH ROW
-    WHEN (OLD.* IS DISTINCT FROM NEW.*)
-    EXECUTE FUNCTION set_last_seen_at();
+    WHEN ( -- To prevent unnecessary updates to last_updated_at at each heartbeat
+        (OLD.model, OLD.recipient_name, OLD.quiet_start, OLD.quiet_end, OLD.timezone) 
+        IS DISTINCT FROM 
+        (NEW.model, NEW.recipient_name, NEW.quiet_start, NEW.quiet_end, NEW.timezone)
+    )
+    EXECUTE FUNCTION set_last_updated_at();
 
 -- Messages Table
 

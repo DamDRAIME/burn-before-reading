@@ -1,6 +1,10 @@
 package web
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -53,4 +57,17 @@ func parsePaginationParams(r *http.Request) (limit, offset int) {
 	}
 
 	return limit, offset
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return err // io.EOF when the body is empty
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("body must contain a single JSON object")
+	}
+	return nil
 }

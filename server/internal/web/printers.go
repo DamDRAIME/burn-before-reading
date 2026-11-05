@@ -1,8 +1,8 @@
 package web
 
 import (
-	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -50,26 +50,27 @@ func (h *PrintersHandler) RegisterPrinterRoutes(r chi.Router) {
 }
 
 type printerPublicResponse struct {
-	ID            uuid.UUID  `json:"id"`
-	Model         string     `json:"model"`
-	RecipientName string     `json:"recipient_name"`
-	QuietStart    *time.Time `json:"quiet_start"`
-	QuietEnd      *time.Time `json:"quiet_end"`
-	Timezone      *string    `json:"timezone"`
-	CreatedAt     time.Time  `json:"created_at"`
-	LastSeenAt    time.Time  `json:"last_seen_at"`
+	ID            uuid.UUID           `json:"id"`
+	Model         string              `json:"model"`
+	RecipientName string              `json:"recipient_name"`
+	QuietStart    *printers.TimeOfDay `json:"quiet_start"`
+	QuietEnd      *printers.TimeOfDay `json:"quiet_end"`
+	Timezone      *string             `json:"timezone"`
+	CreatedAt     time.Time           `json:"created_at"`
+	LastUpdatedAt time.Time           `json:"last_updated_at"`
 }
 
 type printerAdminResponse struct {
-	ID            uuid.UUID  `json:"id"`
-	Model         string     `json:"model"`
-	RecipientName string     `json:"recipient_name"`
-	QuietStart    *time.Time `json:"quiet_start"`
-	QuietEnd      *time.Time `json:"quiet_end"`
-	Timezone      *string    `json:"timezone"`
-	Error         *string    `json:"error"`
-	CreatedAt     time.Time  `json:"created_at"`
-	LastSeenAt    time.Time  `json:"last_seen_at"`
+	ID              uuid.UUID           `json:"id"`
+	Model           string              `json:"model"`
+	RecipientName   string              `json:"recipient_name"`
+	QuietStart      *printers.TimeOfDay `json:"quiet_start"`
+	QuietEnd        *printers.TimeOfDay `json:"quiet_end"`
+	Timezone        *string             `json:"timezone"`
+	Error           *string             `json:"error"`
+	CreatedAt       time.Time           `json:"created_at"`
+	LastUpdatedAt   time.Time           `json:"last_updated_at"`
+	LastHeartbeatAt *time.Time          `json:"last_heartbeat_at"`
 }
 
 type printerStatsResponse struct {
@@ -84,17 +85,13 @@ type printerStatsResponse struct {
 
 func (h *PrintersHandler) createPrinter(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Model         string     `json:"model"`
-		RecipientName string     `json:"recipient_name"`
-		QuietStart    *time.Time `json:"quiet_start"`
-		QuietEnd      *time.Time `json:"quiet_end"`
-		Timezone      *string    `json:"timezone"`
+		Model         string              `json:"model"`
+		RecipientName string              `json:"recipient_name"`
+		QuietStart    *printers.TimeOfDay `json:"quiet_start"`
+		QuietEnd      *printers.TimeOfDay `json:"quiet_end"`
+		Timezone      *string             `json:"timezone"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
-
-	if err := decoder.Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -147,7 +144,7 @@ func (h *PrintersHandler) listPrinters(toResponse func(*printers.Printer) any) h
 		for i, p := range ps {
 			resp[i] = toResponse(p)
 		}
-		
+
 		writeJSONResponse(w, http.StatusOK, resp)
 	}
 }
@@ -163,7 +160,7 @@ func (h *PrintersHandler) getPrinterStats(w http.ResponseWriter, r *http.Request
 		h.handleError(w, err)
 		return
 	}
-	
+
 	writeJSONResponse(w, http.StatusOK, toPrinterStatsResponse(ps))
 }
 
@@ -177,15 +174,11 @@ func (h *PrintersHandler) updatePrinter(w http.ResponseWriter, r *http.Request) 
 		Model         *string `json:"model"`
 		RecipientName *string `json:"recipient_name"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
-
-	if err := decoder.Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	
+
 	updateParams := printers.UpdatePrinterParams{
 		Model:         req.Model,
 		RecipientName: req.RecipientName,
@@ -205,21 +198,17 @@ func (h *PrintersHandler) setQuietHours(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	
-	var req struct {
-		QuietStart *time.Time `json:"quiet_start"`
-		QuietEnd   *time.Time `json:"quiet_end"`
-		Timezone   *string     `json:"timezone"`
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
 
-	if err := decoder.Decode(&req); err != nil {
+	var req struct {
+		QuietStart *printers.TimeOfDay `json:"quiet_start"`
+		QuietEnd   *printers.TimeOfDay `json:"quiet_end"`
+		Timezone   *string             `json:"timezone"`
+	}
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	
+
 	params := printers.QuietHoursParams{
 		QuietStart: req.QuietStart,
 		QuietEnd:   req.QuietEnd,
@@ -231,7 +220,7 @@ func (h *PrintersHandler) setQuietHours(w http.ResponseWriter, r *http.Request) 
 		h.handleError(w, err)
 		return
 	}
-	
+
 	writeJSONResponse(w, http.StatusOK, toPrinterAdminResponse(p))
 }
 
@@ -240,13 +229,13 @@ func (h *PrintersHandler) clearQuietHours(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	
+
 	p, err := h.service.ClearQuietHours(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	
+
 	writeJSONResponse(w, http.StatusOK, toPrinterAdminResponse(p))
 }
 
@@ -255,15 +244,11 @@ func (h *PrintersHandler) heartbeat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	
+
 	var req struct {
 		Error *string `json:"error"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
-	
-	if err := decoder.Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil && !errors.Is(err, io.EOF) {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -286,21 +271,22 @@ func toPrinterPublicResponse(p *printers.Printer) printerPublicResponse {
 		QuietEnd:      p.QuietEnd,
 		Timezone:      p.Timezone,
 		CreatedAt:     p.CreatedAt,
-		LastSeenAt:    p.LastSeenAt,
+		LastUpdatedAt: p.LastUpdatedAt,
 	}
 }
 
 func toPrinterAdminResponse(p *printers.Printer) printerAdminResponse {
 	return printerAdminResponse{
-		ID:            p.ID,
-		Model:         p.Model,
-		RecipientName: p.RecipientName,
-		QuietStart:    p.QuietStart,
-		QuietEnd:      p.QuietEnd,
-		Timezone:      p.Timezone,
-		Error:         p.Error,
-		CreatedAt:     p.CreatedAt,
-		LastSeenAt:    p.LastSeenAt,
+		ID:              p.ID,
+		Model:           p.Model,
+		RecipientName:   p.RecipientName,
+		QuietStart:      p.QuietStart,
+		QuietEnd:        p.QuietEnd,
+		Timezone:        p.Timezone,
+		Error:           p.Error,
+		CreatedAt:       p.CreatedAt,
+		LastUpdatedAt:   p.LastUpdatedAt,
+		LastHeartbeatAt: p.LastHeartbeatAt,
 	}
 }
 
@@ -326,7 +312,13 @@ func (h *PrintersHandler) handleError(w http.ResponseWriter, err error) {
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, printers.ErrRecipientNameTooLong):
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, printers.ErrInvalidQuietHours):
+		writeErrorResponse(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, printers.ErrEqualQuietHours):
+		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, printers.ErrInvalidTimezone):
+		writeErrorResponse(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, printers.ErrInvalidCharacters):
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, printers.ErrNotFound):
 		writeErrorResponse(w, http.StatusNotFound, err.Error())

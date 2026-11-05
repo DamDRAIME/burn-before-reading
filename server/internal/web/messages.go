@@ -1,12 +1,10 @@
 package web
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -86,11 +84,7 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 		Body      string `json:"body"`
 		PrinterID string `json:"printer_id"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
-
-	if err := decoder.Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -168,12 +162,12 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msgs_response := make([]messageAdminResponse, len(msgs))
+	resp := make([]messageAdminResponse, len(msgs))
 	for i, msg := range msgs {
-		msgs_response[i] = toMessageAdminResponse(msg)
+		resp[i] = toMessageAdminResponse(msg)
 	}
 
-	writeJSONResponse(w, http.StatusOK, msgs_response)
+	writeJSONResponse(w, http.StatusOK, resp)
 }
 
 func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request) {
@@ -245,11 +239,7 @@ func (h *MessagesHandler) failedMessage(w http.ResponseWriter, r *http.Request) 
 	var req struct {
 		ErrorMsg string `json:"error"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10) // Limit request body to 16KB
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Disallow unknown fields in the JSON request
-
-	if err := decoder.Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

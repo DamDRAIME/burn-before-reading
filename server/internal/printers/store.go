@@ -2,7 +2,6 @@ package printers
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -26,8 +25,8 @@ type Store interface {
 type CreatePrinterParams struct {
 	Model         string
 	RecipientName string
-	QuietStart    *time.Time
-	QuietEnd      *time.Time
+	QuietStart    *TimeOfDay
+	QuietEnd      *TimeOfDay
 	Timezone      *string
 }
 
@@ -37,7 +36,7 @@ type UpdatePrinterParams struct {
 }
 
 type QuietHoursParams struct {
-	QuietStart *time.Time
-	QuietEnd   *time.Time
+	QuietStart *TimeOfDay
+	QuietEnd   *TimeOfDay
 	Timezone   *string
 }

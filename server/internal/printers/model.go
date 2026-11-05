@@ -13,18 +13,19 @@ type Printer struct {
 
 	RecipientName string
 
-	QuietStart *time.Time
-	QuietEnd   *time.Time
+	QuietStart *TimeOfDay
+	QuietEnd   *TimeOfDay
 	Timezone   *string
 
 	Error *string
 
-	CreatedAt  time.Time
-	LastSeenAt time.Time
+	CreatedAt       time.Time
+	LastUpdatedAt   time.Time
+	LastHeartbeatAt *time.Time
 }
 
 type PrinterStats struct {
-	ID 				uuid.UUID
+	ID              uuid.UUID
 	MessagesClaimed int64      // messages claimed at least once (attempts > 0)
 	MessagesPrinted int64      // status = printed
 	MessagesFailed  int64      // status = failed
