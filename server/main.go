@@ -15,6 +15,7 @@ import (
 
 	"bbr/internal/database"
 	"bbr/internal/messages"
+	"bbr/internal/printers"
 	"bbr/internal/web"
 )
 
@@ -55,6 +56,9 @@ func run(logger *slog.Logger) error {
 	msgStore := database.NewMessageStore(pool)
 	msgService := messages.NewService(msgStore)
 	msgHandler := web.NewMessagesHandler(msgService, logger)
+	printerStore := database.NewPrinterStore(pool)
+	printerService := printers.NewService(printerStore)
+	printerHandler := web.NewPrintersHandler(printerService, logger)
 
 	// Set up router
 	r := chi.NewRouter()
@@ -73,7 +77,7 @@ func run(logger *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, adminToken))
+	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, adminToken))
 
 	srv := &http.Server{
 		Addr:              addr,
