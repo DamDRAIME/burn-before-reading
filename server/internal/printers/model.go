@@ -33,3 +33,31 @@ type PrinterStats struct {
 	LastClaimedAt   *time.Time // MAX(claimed_at)
 	LastPrintedAt   *time.Time // MAX(printed_at)
 }
+
+// InQuietHours reports whether now falls in [QuietStart, QuietEnd) in the printer's timezone.
+// Handles ranges that cross midnight (e.g. 22:00–07:00).
+func (p *Printer) InQuietHours(now time.Time) bool {
+	if p.QuietStart == nil || p.QuietEnd == nil {
+		return false
+	}
+
+	timezone := DefaultTimezone
+	if p.Timezone != nil {
+		timezone = *p.Timezone
+	}
+
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		// panic here because this should have been validated when the printer was created/updated
+		panic(err)
+	}
+
+	now = now.In(loc)
+	m := now.Hour()*60 + now.Minute()
+	start := p.QuietStart.Hour*60 + p.QuietStart.Minute
+	end := p.QuietEnd.Hour*60 + p.QuietEnd.Minute
+	if start < end {
+		return m >= start && m < end
+	}
+	return m >= start || m < end // Quiet hours span midnight
+}

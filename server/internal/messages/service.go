@@ -5,9 +5,12 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+
+	"bbr/internal/printers"
 )
 
 var (
@@ -19,6 +22,8 @@ var (
 
 	ErrNotFound      = errors.New("message not found")
 	ErrInvalidStatus = errors.New("operation not allowed for the current message status")
+
+	ErrInQuietHours = errors.New("operation not allowed during quiet hours")
 )
 
 const (
@@ -26,12 +31,18 @@ const (
 	MaxSenderNameLength = 20
 )
 
-type Service struct {
-	store Store
+type PrinterGetter interface {
+	GetPrinterByID(ctx context.Context, id uuid.UUID) (*printers.Printer, error)
 }
 
-func NewService(store Store) *Service {
-	return &Service{store: store}
+type Service struct {
+	store    Store
+	printers PrinterGetter
+	now      func() time.Time
+}
+
+func NewService(store Store, printers PrinterGetter) *Service {
+	return &Service{store: store, printers: printers, now: time.Now}
 }
 
 // -- Submitting a new message ----
@@ -125,5 +136,13 @@ func (s *Service) ClaimMessage(ctx context.Context, id uuid.UUID) (*Message, err
 }
 
 func (s *Service) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*Message, error) {
+	p, err := s.printers.GetPrinterByID(ctx, printerID)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.InQuietHours(s.now()) {
+		return nil, ErrInQuietHours
+	}
 	return s.store.ClaimOldestMessage(ctx, printerID)
 }

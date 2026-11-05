@@ -53,12 +53,12 @@ func run(logger *slog.Logger) error {
 	defer pool.Close()
 
 	// Initialize message store and service
-	msgStore := database.NewMessageStore(pool)
-	msgService := messages.NewService(msgStore)
-	msgHandler := web.NewMessagesHandler(msgService, logger)
 	printerStore := database.NewPrinterStore(pool)
 	printerService := printers.NewService(printerStore)
 	printerHandler := web.NewPrintersHandler(printerService, logger)
+	msgStore := database.NewMessageStore(pool)
+	msgService := messages.NewService(msgStore, printerService)
+	msgHandler := web.NewMessagesHandler(msgService, logger)
 
 	// Set up router
 	r := chi.NewRouter()
