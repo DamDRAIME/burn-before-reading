@@ -59,22 +59,30 @@ func normalizeTimezone(timezone *string) (string, bool) {
 	return timezoneStr, true
 }
 
+func validateOptionalString(s *string, maxLength int, errEmpty, errTooLong error) (*string, error) {
+	if s == nil {
+		return nil, errEmpty
+	}
+	trimmed := strings.TrimSpace(*s)
+	if trimmed == "" {
+		return nil, errEmpty
+	}
+	if utf8.RuneCountInString(trimmed) > maxLength {
+		return nil, errTooLong
+	}
+	return &trimmed, nil
+}
+
 func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams) (*Printer, error) {
 
-	model := strings.TrimSpace(params.Model)
-	if model == "" {
-		return nil, ErrEmptyModel
-	}
-	if utf8.RuneCountInString(model) > MaxModelLength {
-		return nil, ErrModelTooLong
+	model, err := validateOptionalString(&params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
+	if err != nil {
+		return nil, err
 	}
 
-	recipientName := strings.TrimSpace(params.RecipientName)
-	if recipientName == "" {
-		return nil, ErrEmptyRecipientName
-	}
-	if utf8.RuneCountInString(recipientName) > MaxRecipientNameLength {
-		return nil, ErrRecipientNameTooLong
+	recipientName, err := validateOptionalString(&params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
+	if err != nil {
+		return nil, err
 	}
 
 	timezone, ok := normalizeTimezone(params.Timezone)
@@ -107,6 +115,10 @@ func (s *Service) ListPrinters(ctx context.Context, limit, offset int) ([]*Print
 	return s.store.ListPrinters(ctx, limit, offset)
 }
 
+func (s *Service) GetPrinterStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error) {
+	return s.store.GetPrinterStats(ctx, id)
+}
+
 func (s *Service) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string) error {
 	if errorMsg != nil {
 		trimmed := strings.TrimSpace(*errorMsg)
@@ -120,7 +132,20 @@ func (s *Service) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string)
 }
 
 func (s *Service) UpdatePrinter(ctx context.Context, id uuid.UUID, params UpdatePrinterParams) (*Printer, error) {
-	return s.store.UpdatePrinter(ctx, id, params)
+	model, err := validateOptionalString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
+	if err != nil {
+		return nil, err
+	}
+
+	recipientName, err := validateOptionalString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.store.UpdatePrinter(ctx, id, UpdatePrinterParams{
+		Model:         model,
+		RecipientName: recipientName,
+	})
 }
 
 func (s *Service) SetQuietHours(ctx context.Context, id uuid.UUID, params QuietHoursParams) (*Printer, error) {
