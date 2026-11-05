@@ -18,7 +18,7 @@ CREATE TABLE printers (
 
     quiet_start TIME,
     quiet_end TIME,
-    timezone TEXT DEFAULT 'Europe/Brussels',
+    timezone TEXT,
 
     error TEXT,
 

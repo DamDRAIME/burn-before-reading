@@ -25,6 +25,7 @@ var (
 const (
 	MaxModelLength         = 50
 	MaxRecipientNameLength = 20
+	DefaultTimezone        = "Europe/Brussels"
 )
 
 type Service struct {
@@ -43,9 +44,9 @@ type SubmitPrinterParams struct {
 	Timezone      *string
 }
 
-func validateTimezone(timezone *string) (string, bool) {
+func normalizeTimezone(timezone *string) (string, bool) {
 	if timezone == nil {
-		return "", false
+		return DefaultTimezone, true
 	}
 	timezoneStr := strings.TrimSpace(*timezone)
 	if timezoneStr == "" || timezoneStr == "Local" {
@@ -76,7 +77,7 @@ func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams)
 		return nil, ErrRecipientNameTooLong
 	}
 
-	timezone, ok := validateTimezone(params.Timezone)
+	timezone, ok := normalizeTimezone(params.Timezone)
 	if !ok {
 		return nil, ErrInvalidTimezone
 	}
@@ -123,7 +124,7 @@ func (s *Service) UpdatePrinter(ctx context.Context, id uuid.UUID, params Update
 }
 
 func (s *Service) SetQuietHours(ctx context.Context, id uuid.UUID, params QuietHoursParams) (*Printer, error) {
-	timezone, ok := validateTimezone(params.Timezone)
+	timezone, ok := normalizeTimezone(params.Timezone)
 	if !ok {
 		return nil, ErrInvalidTimezone
 	}
