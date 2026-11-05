@@ -14,7 +14,7 @@ type Store interface {
 
 	TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to Status) (*Message, error)
 
-	ListMessages(ctx context.Context, limit int, offset int) ([]*Message, error)
+	ListMessages(ctx context.Context, limit, offset int) ([]*Message, error)
 
 	FailedMessage(ctx context.Context, id uuid.UUID, error string) (*Message, error)
 
