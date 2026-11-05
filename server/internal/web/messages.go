@@ -30,6 +30,7 @@ func (h *MessagesHandler) RegisterPublicRoutes(r chi.Router) {
 }
 
 func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
+	r.Post("/messages", h.createAdminMessage)
 	r.Get("/messages", h.listMessages)
 	r.Get("/messages/{id}", h.getMessageByID(func(msg *messages.Message) any {
 		return toMessageAdminResponse(msg)
@@ -109,6 +110,49 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 		SenderName: req.Sender,
 		SenderIP:   &senderIP,
 		Source:     messages.SourceWeb,
+		Content:    req.Body,
+	}
+
+	msg, err := h.service.SubmitMessage(r.Context(), submitParams)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusCreated, toMessagePublicResponse(msg))
+}
+
+func (h *MessagesHandler) createAdminMessage(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Sender    string `json:"sender"`
+		Body      string `json:"body"`
+		PrinterID string `json:"printer_id"`
+	}
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	var senderIP net.IP
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		// In case RemoteAddr doesn't have a port (unlikely for HTTP)
+		senderIP = net.ParseIP(r.RemoteAddr)
+	} else {
+		senderIP = net.ParseIP(host)
+	}
+
+	printerID, err := uuid.Parse(req.PrinterID)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid printer ID")
+		return
+	}
+
+	submitParams := messages.SubmitMessageParams{
+		PrinterID:  printerID,
+		SenderName: req.Sender,
+		SenderIP:   &senderIP,
+		Source:     messages.SourceAdmin,
 		Content:    req.Body,
 	}
 
