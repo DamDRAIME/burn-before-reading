@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -21,8 +22,7 @@ func parseUUIDParam(w http.ResponseWriter, r *http.Request, param string, errMsg
 }
 
 func parsePositiveInt(s string) (int, error) {
-	var value int
-	_, err := fmt.Sscanf(s, "%d", &value)
+	value, err := strconv.Atoi(s)
 	if err != nil || value <= 0 {
 		return 0, fmt.Errorf("invalid positive integer: %s", s)
 	}
@@ -30,8 +30,7 @@ func parsePositiveInt(s string) (int, error) {
 }
 
 func parseNonNegativeInt(s string) (int, error) {
-	var value int
-	_, err := fmt.Sscanf(s, "%d", &value)
+	value, err := strconv.Atoi(s)
 	if err != nil || value < 0 {
 		return 0, fmt.Errorf("invalid non-negative integer: %s", s)
 	}
