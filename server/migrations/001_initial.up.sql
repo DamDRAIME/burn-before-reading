@@ -57,6 +57,7 @@ CREATE TABLE messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     moderated_at TIMESTAMPTZ,
     claimed_at TIMESTAMPTZ,
+    processed_at TIMESTAMPTZ,
     printed_at TIMESTAMPTZ,
     last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -70,7 +71,7 @@ CREATE TABLE messages (
             'awaiting_approval',
             'pending',
             'claimed',
-            'printing',
+            'processed',
             'printed',
             'rejected',
             'failed'
@@ -87,11 +88,8 @@ CREATE TABLE messages (
 );
 
 CREATE INDEX idx_messages_pending
-    ON messages (created_at)
+    ON messages (printer_id, created_at)
     WHERE status = 'pending';
-
-CREATE INDEX idx_messages_printer_id
-    ON messages (printer_id);
 
 CREATE TRIGGER trg_messages_last_updated_at
     BEFORE UPDATE ON messages
