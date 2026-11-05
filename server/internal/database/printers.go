@@ -184,8 +184,7 @@ func (s *PrinterStore) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *st
 		`UPDATE printers
 		SET last_heartbeat_at = NOW(),
 			error = $1
-		WHERE id = $2
-		RETURNING `+printerColumns,
+		WHERE id = $2`,
 		errorMsg,
 		id,
 	)
