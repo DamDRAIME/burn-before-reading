@@ -23,13 +23,20 @@ func NewMessageStore(pool *pgxpool.Pool) *MessageStore {
 // Compile-time check to ensure MessageStore implements the messages.Store interface
 var _ messages.Store = (*MessageStore)(nil)
 
-// statusTimestampColumn maps a target status to the timestamp column stamped on entry.
+type transition struct {
+	from messages.Status
+	to   messages.Status
+}
+
+// transitionTimestampColumn maps a status transition (from -> to) to the timestamp column stamped on entry.
 // Column names can't be bound as query parameters, so they come only from this fixed map.
-var statusTimestampColumn = map[messages.Status]string{
-	messages.StatusPending:  "moderated_at",
-	messages.StatusRejected: "moderated_at",
-	messages.StatusPrinting: "claimed_at",
-	messages.StatusPrinted:  "printed_at",
+var transitionTimestampColumn = map[transition]string{
+	{messages.StatusAwaitingApproval, messages.StatusPending}:  "moderated_at",
+	{messages.StatusAwaitingApproval, messages.StatusRejected}: "moderated_at",
+	{messages.StatusClaimed, messages.StatusProcessed}:         "processed_at",
+	{messages.StatusProcessed, messages.StatusPrinted}:         "printed_at",
+	// pending → claimed: set by the claim endpoint directly, not by a status transition
+	// failed  → pending (requeue): nothing
 }
 
 // maxAttempts is the number of print attempts after which a failed message is no longer retried.
@@ -46,6 +53,7 @@ const messageColumns = `
 	created_at,
 	moderated_at,
 	claimed_at,
+	processed_at,
 	printed_at,
 	last_updated_at,
 	attempts,
@@ -67,6 +75,7 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.CreatedAt,
 		&msg.ModeratedAt,
 		&msg.ClaimedAt,
+		&msg.ProcessedAt,
 		&msg.PrintedAt,
 		&msg.LastUpdatedAt,
 		&msg.Attempts,
@@ -137,7 +146,7 @@ func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messa
 func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to messages.Status) (*messages.Message, error) {
 	// Determine the timestamp column to set based on the target status
 	setTimestampColumn := ""
-	if column, ok := statusTimestampColumn[to]; ok {
+	if column, ok := transitionTimestampColumn[transition{from: from, to: to}]; ok {
 		setTimestampColumn += ", " + column + " = NOW()"
 	}
 
@@ -186,7 +195,7 @@ func (s *MessageStore) ListMessages(ctx context.Context, limit int, offset int) 
 	return msgs, nil
 }
 
-func (s *MessageStore) FailedMessage(ctx context.Context, id uuid.UUID, errorMsg string) (*messages.Message, error) {
+func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*messages.Message, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`UPDATE messages
@@ -199,7 +208,7 @@ func (s *MessageStore) FailedMessage(ctx context.Context, id uuid.UUID, errorMsg
 		messages.StatusFailed,
 		errorMsg,
 		id,
-		[]messages.Status{messages.StatusClaimed, messages.StatusPrinting},
+		[]messages.Status{messages.StatusClaimed, messages.StatusProcessed},
 	)
 
 	msg, err := scanMessage(row)

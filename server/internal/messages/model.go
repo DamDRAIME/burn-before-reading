@@ -13,7 +13,7 @@ const (
 	StatusAwaitingApproval Status = "awaiting_approval"
 	StatusPending          Status = "pending"
 	StatusClaimed          Status = "claimed"
-	StatusPrinting         Status = "printing"
+	StatusProcessed        Status = "processed"
 	StatusPrinted          Status = "printed"
 	StatusRejected         Status = "rejected"
 	StatusFailed           Status = "failed"
@@ -42,6 +42,7 @@ type Message struct {
 	CreatedAt     time.Time
 	ModeratedAt   *time.Time
 	ClaimedAt     *time.Time
+	ProcessedAt   *time.Time
 	PrintedAt     *time.Time
 	LastUpdatedAt time.Time
 

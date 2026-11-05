@@ -42,10 +42,9 @@ func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 
 func (h *MessagesHandler) RegisterPrinterRoutes(r chi.Router) {
 	r.Post("/{id}/messages/oldest/claim", h.claimOldestMessage)
-	r.Patch("/messages/{id}/claim", h.claimMessage)
-	r.Patch("/messages/{id}/printing", h.printingMessage)
-	r.Patch("/messages/{id}/printed", h.printedMessage)
-	r.Patch("/messages/{id}/failed", h.failedMessage)
+	r.Patch("/messages/{id}/processed", h.markAsProcessed)
+	r.Patch("/messages/{id}/printed", h.markAsPrinted)
+	r.Patch("/messages/{id}/failed", h.markAsFailed)
 }
 
 type messagePublicResponse struct {
@@ -55,28 +54,30 @@ type messagePublicResponse struct {
 	Content        string     `json:"content"`
 	Status         string     `json:"status"`
 	CreatedAt      time.Time  `json:"created_at"`
-	ModeratedAt    *time.Time `json:"moderated_at,omitempty"`
-	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
-	PrintedAt      *time.Time `json:"printed_at,omitempty"`
-	LastUpdatedAt  time.Time  `json:"last_updated_at,omitempty"`
+	ModeratedAt    *time.Time `json:"moderated_at"`
+	ClaimedAt      *time.Time `json:"claimed_at"`
+	ProcessedAt    *time.Time `json:"processed_at"`
+	PrintedAt      *time.Time `json:"printed_at"`
+	LastUpdatedAt  time.Time  `json:"last_updated_at"`
 }
 
 type messageAdminResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	SequenceNumber int64      `json:"sequence_number"`
 	SenderName     string     `json:"sender_name"`
-	SenderIP       *net.IP    `json:"sender_ip,omitempty"`
+	SenderIP       *net.IP    `json:"sender_ip"`
 	Source         string     `json:"source"`
 	Content        string     `json:"content"`
 	Status         string     `json:"status"`
 	CreatedAt      time.Time  `json:"created_at"`
-	ModeratedAt    *time.Time `json:"moderated_at,omitempty"`
-	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
-	PrintedAt      *time.Time `json:"printed_at,omitempty"`
-	LastUpdatedAt  time.Time  `json:"last_updated_at,omitempty"`
+	ModeratedAt    *time.Time `json:"moderated_at"`
+	ClaimedAt      *time.Time `json:"claimed_at"`
+	ProcessedAt    *time.Time `json:"processed_at"`
+	PrintedAt      *time.Time `json:"printed_at"`
+	LastUpdatedAt  time.Time  `json:"last_updated_at"`
 	Attempts       int        `json:"attempts"`
-	LastError      *string    `json:"last_error,omitempty"`
-	PrinterID      uuid.UUID  `json:"printer_id,omitempty"`
+	LastError      *string    `json:"last_error"`
+	PrinterID      uuid.UUID  `json:"printer_id"`
 }
 
 func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) {
@@ -244,13 +245,13 @@ func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) 
 	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
 }
 
-func (h *MessagesHandler) printingMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) markAsProcessed(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.PrintingMessage(r.Context(), id)
+	msg, err := h.service.MarkAsProcessed(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -259,13 +260,13 @@ func (h *MessagesHandler) printingMessage(w http.ResponseWriter, r *http.Request
 	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
 }
 
-func (h *MessagesHandler) printedMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) markAsPrinted(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.PrintedMessage(r.Context(), id)
+	msg, err := h.service.MarkAsPrinted(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -274,8 +275,8 @@ func (h *MessagesHandler) printedMessage(w http.ResponseWriter, r *http.Request)
 	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
 }
 
-func (h *MessagesHandler) failedMessage(w http.ResponseWriter, r *http.Request) {
-	msg_id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
+func (h *MessagesHandler) markAsFailed(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
 	}

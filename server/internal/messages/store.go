@@ -16,7 +16,7 @@ type Store interface {
 
 	ListMessages(ctx context.Context, limit, offset int) ([]*Message, error)
 
-	FailedMessage(ctx context.Context, id uuid.UUID, error string) (*Message, error)
+	MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error)
 
 	ClaimMessage(ctx context.Context, id uuid.UUID) (*Message, error)
 

@@ -117,16 +117,16 @@ func (s *Service) RequeueMessage(ctx context.Context, id uuid.UUID) (*Message, e
 	return s.store.TransitionMessageStatus(ctx, id, StatusFailed, StatusPending)
 }
 
-func (s *Service) PrintingMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionMessageStatus(ctx, id, StatusClaimed, StatusPrinting)
+func (s *Service) MarkAsProcessed(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionMessageStatus(ctx, id, StatusClaimed, StatusProcessed)
 }
 
-func (s *Service) PrintedMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionMessageStatus(ctx, id, StatusPrinting, StatusPrinted)
+func (s *Service) MarkAsPrinted(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionMessageStatus(ctx, id, StatusProcessed, StatusPrinted)
 }
 
-func (s *Service) FailedMessage(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error) {
-	return s.store.FailedMessage(ctx, id, errorMsg)
+func (s *Service) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error) {
+	return s.store.MarkAsFailed(ctx, id, errorMsg)
 }
 
 // -- Claiming messages ----
