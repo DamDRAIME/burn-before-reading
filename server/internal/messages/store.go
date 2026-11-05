@@ -18,7 +18,7 @@ type Store interface {
 
 	FailedMessage(ctx context.Context, id uuid.UUID, error string) (*Message, error)
 
-	ClaimMessage(ctx context.Context, id uuid.UUID, printer_id uuid.UUID) (*Message, error)
+	ClaimMessage(ctx context.Context, id uuid.UUID) (*Message, error)
 
 	ClaimOldestMessage(ctx context.Context, printer_id uuid.UUID) (*Message, error)
 }

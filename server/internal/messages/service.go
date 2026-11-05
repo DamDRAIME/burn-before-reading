@@ -120,8 +120,8 @@ func (s *Service) FailedMessage(ctx context.Context, id uuid.UUID, errorMsg stri
 
 // -- Claiming messages ----
 
-func (s *Service) ClaimMessage(ctx context.Context, id uuid.UUID, printerID uuid.UUID) (*Message, error) {
-	return s.store.ClaimMessage(ctx, id, printerID)
+func (s *Service) ClaimMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.ClaimMessage(ctx, id)
 }
 
 func (s *Service) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*Message, error) {

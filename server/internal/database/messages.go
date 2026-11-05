@@ -250,18 +250,16 @@ func (s *MessageStore) ClaimOldestMessage(ctx context.Context, printerID uuid.UU
 	return &msg, nil
 }
 
-func (s *MessageStore) ClaimMessage(ctx context.Context, id uuid.UUID, printerID uuid.UUID) (*messages.Message, error) {
+func (s *MessageStore) ClaimMessage(ctx context.Context, id uuid.UUID) (*messages.Message, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`UPDATE messages
 		SET status = $1,
-			printer_id = $2,
 			claimed_at = NOW(),
 			attempts = attempts + 1
 		WHERE id = $3 AND status = $4
 		RETURNING `+messageColumns,
 		messages.StatusClaimed,
-		printerID,
 		id,
 		messages.StatusPending,
 	)

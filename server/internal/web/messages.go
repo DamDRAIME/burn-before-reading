@@ -298,16 +298,12 @@ func (h *MessagesHandler) failedMessage(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *MessagesHandler) claimMessage(w http.ResponseWriter, r *http.Request) {
-	printer_id, ok := parseUUIDParam(w, r, "printer_id", "invalid printer ID")
-	if !ok {
-		return
-	}
 	msg_id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.ClaimMessage(r.Context(), msg_id, printer_id)
+	msg, err := h.service.ClaimMessage(r.Context(), msg_id)
 	if err != nil {
 		h.handleError(w, err)
 		return
