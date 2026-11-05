@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -259,29 +260,27 @@ func (s *MessageStore) ClaimOldestMessage(ctx context.Context, printerID uuid.UU
 	return &msg, nil
 }
 
-func (s *MessageStore) ClaimMessage(ctx context.Context, id uuid.UUID) (*messages.Message, error) {
-	row := s.pool.QueryRow(
+// ReleaseStaleClaims returns messages that have been claimed for longer than timeout to the queue,
+// or marks them failed once maxAttempts is reached (attempts was already incremented by the claim).
+// The cutoff is computed by the database (NOW()), so it doesn't depend on the API server's clock.
+// It returns the number of messages released.
+func (s *MessageStore) ReleaseStaleClaims(ctx context.Context, timeout time.Duration) (int64, error) {
+	tag, err := s.pool.Exec(
 		ctx,
 		`UPDATE messages
-		SET status = $1,
-			claimed_at = NOW(),
-			attempts = attempts + 1
-		WHERE id = $3 AND status = $4
-		RETURNING `+messageColumns,
-		messages.StatusClaimed,
-		id,
+		SET status = CASE WHEN attempts < $1 THEN $2 ELSE $3 END,
+			last_error = 'claim timed out'
+		WHERE status = ANY($4)
+			AND claimed_at < NOW() - make_interval(secs => $5)`,
+		maxAttempts,
 		messages.StatusPending,
+		messages.StatusFailed,
+		[]messages.Status{messages.StatusClaimed, messages.StatusProcessed},
+		timeout.Seconds(),
 	)
-
-	msg, err := scanMessage(row)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, s.resolveNoRowsUpdated(ctx, id, "claim message")
-	}
-
 	if err != nil {
-		return nil, fmt.Errorf("claim message: %w", err)
+		return 0, fmt.Errorf("release stale claims: %w", err)
 	}
 
-	return &msg, nil
+	return tag.RowsAffected(), nil
 }

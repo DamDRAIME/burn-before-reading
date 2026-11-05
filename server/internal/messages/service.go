@@ -3,6 +3,7 @@ package messages
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -131,10 +132,6 @@ func (s *Service) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg strin
 
 // -- Claiming messages ----
 
-func (s *Service) ClaimMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.ClaimMessage(ctx, id)
-}
-
 func (s *Service) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*Message, error) {
 	p, err := s.printers.GetPrinterByID(ctx, printerID)
 	if err != nil {
@@ -145,4 +142,33 @@ func (s *Service) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (
 		return nil, ErrInQuietHours
 	}
 	return s.store.ClaimOldestMessage(ctx, printerID)
+}
+
+// -- Recovering stuck claims ----
+
+// RunClaimReaper periodically returns messages whose claim is older than claimTimeout
+// to the queue (or to failed after too many attempts), e.g. when a printer died mid-job.
+// It runs once immediately, to recover claims left over from before a restart,
+// then every interval until ctx is cancelled.
+func (s *Service) RunClaimReaper(ctx context.Context, claimTimeout, interval time.Duration, logger *slog.Logger) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		n, err := s.store.ReleaseStaleClaims(ctx, claimTimeout)
+		switch {
+		case ctx.Err() != nil:
+			return // shutting down; the error, if any, is just the cancellation
+		case err != nil:
+			logger.Error("release stale claims", "error", err)
+		case n > 0:
+			logger.Info("released stale claims", "count", n)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

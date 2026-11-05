@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"bbr/internal/messages"
+	"bbr/internal/printers"
 )
 
 type MessagesHandler struct {
@@ -166,6 +167,7 @@ func (h *MessagesHandler) createAdminMessage(w http.ResponseWriter, r *http.Requ
 	writeJSONResponse(w, http.StatusCreated, toMessagePublicResponse(msg))
 }
 
+// Doesn't reset `Attempts` so history is preserved and failed messages get one more try
 func (h *MessagesHandler) requeueMessage(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
@@ -289,22 +291,7 @@ func (h *MessagesHandler) markAsFailed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, err := h.service.FailedMessage(r.Context(), msg_id, req.ErrorMsg)
-	if err != nil {
-		h.handleError(w, err)
-		return
-	}
-
-	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
-}
-
-func (h *MessagesHandler) claimMessage(w http.ResponseWriter, r *http.Request) {
-	msg_id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
-	if !ok {
-		return
-	}
-
-	msg, err := h.service.ClaimMessage(r.Context(), msg_id)
+	msg, err := h.service.MarkAsFailed(r.Context(), id, req.ErrorMsg)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -314,15 +301,19 @@ func (h *MessagesHandler) claimMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MessagesHandler) claimOldestMessage(w http.ResponseWriter, r *http.Request) {
-	printer_id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	printerID, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.ClaimOldestMessage(r.Context(), printer_id)
+	msg, err := h.service.ClaimOldestMessage(r.Context(), printerID)
 	if err != nil {
 		if errors.Is(err, messages.ErrNotFound) {
 			w.WriteHeader(http.StatusNoContent) // Queue is empty
+			return
+		}
+		if errors.Is(err, messages.ErrInQuietHours) {
+			w.WriteHeader(http.StatusNoContent) // Operation not allowed during quiet hours
 			return
 		}
 		h.handleError(w, err)
@@ -377,7 +368,7 @@ func (h *MessagesHandler) handleError(w http.ResponseWriter, err error) {
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, messages.ErrContentTooLong):
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, messages.ErrNotFound):
+	case errors.Is(err, messages.ErrNotFound), errors.Is(err, printers.ErrNotFound):
 		writeErrorResponse(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, messages.ErrInvalidStatus):
 		writeErrorResponse(w, http.StatusConflict, err.Error())

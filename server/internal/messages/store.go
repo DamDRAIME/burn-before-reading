@@ -3,6 +3,7 @@ package messages
 import (
 	"context"
 	"net"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -18,9 +19,9 @@ type Store interface {
 
 	MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error)
 
-	ClaimMessage(ctx context.Context, id uuid.UUID) (*Message, error)
+	ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*Message, error)
 
-	ClaimOldestMessage(ctx context.Context, printer_id uuid.UUID) (*Message, error)
+	ReleaseStaleClaims(ctx context.Context, timeout time.Duration) (int64, error)
 }
 
 type CreateMessageParams struct {
