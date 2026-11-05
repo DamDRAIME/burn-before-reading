@@ -129,7 +129,7 @@ func (s *PrinterStore) ListPrinters(ctx context.Context, limit int, offset int) 
 	}
 	defer rows.Close()
 
-	printers, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*printers.Printer, error) {
+	ps, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*printers.Printer, error) {
 		p, err := scanPrinter(row)
 		return &p, err
 	})
@@ -137,7 +137,7 @@ func (s *PrinterStore) ListPrinters(ctx context.Context, limit int, offset int) 
 		return nil, fmt.Errorf("list printers: %w", err)
 	}
 
-	return printers, nil
+	return ps, nil
 }
 
 func (s *PrinterStore) GetPrinterStats(ctx context.Context, id uuid.UUID) (*printers.PrinterStats, error) {
