@@ -120,6 +120,7 @@ func (s *PrinterStore) GetPrinterStats(ctx context.Context, id uuid.UUID) (*prin
 	row := s.pool.QueryRow(
 		ctx,
 		`SELECT
+			id,
 			COUNT(*) FILTER (WHERE attempts > 0)        AS messages_claimed,
 			COUNT(*) FILTER (WHERE status = 'printed')  AS messages_printed,
 			COUNT(*) FILTER (WHERE status = 'failed')   AS messages_failed,

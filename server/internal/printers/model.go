@@ -24,6 +24,7 @@ type Printer struct {
 }
 
 type PrinterStats struct {
+	ID 				uuid.UUID
 	MessagesClaimed int64      // messages claimed at least once (attempts > 0)
 	MessagesPrinted int64      // status = printed
 	MessagesFailed  int64      // status = failed
