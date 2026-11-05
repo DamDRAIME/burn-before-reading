@@ -160,8 +160,7 @@ func (h *MessagesHandler) getMessageByID(toResponse func(*messages.Message) any)
 }
 
 func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, offset := parsePaginationParams(r)
 
 	msgs, err := h.service.ListMessages(r.Context(), limit, offset)
 	if err != nil {
