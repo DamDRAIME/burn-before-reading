@@ -94,8 +94,8 @@ func (s *Service) GetMessageByID(ctx context.Context, id uuid.UUID) (*Message, e
 // -- Listing messages with pagination ----
 
 func (s *Service) ListMessages(ctx context.Context, limit, offset int) ([]*Message, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 100 // default limit
+	if limit <= 0 || limit > 10 {
+		limit = 10 // default limit
 	}
 	if offset < 0 {
 		offset = 0 // default offset

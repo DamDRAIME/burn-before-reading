@@ -127,7 +127,7 @@ func (s *Service) GetPrinterByID(ctx context.Context, id uuid.UUID) (*Printer, e
 }
 
 func (s *Service) ListPrinters(ctx context.Context, limit, offset int) ([]*Printer, error) {
-	if limit <= 0 || limit > 100 {
+	if limit <= 0 || limit > 10 {
 		limit = 10 // default limit
 	}
 	if offset < 0 {
