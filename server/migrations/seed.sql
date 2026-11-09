@@ -49,7 +49,7 @@ INSERT INTO messages (sender_name, sender_ip, source, content, status, created_a
 
 -- processing: currently being printed
 INSERT INTO messages (sender_name, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, attempts, printer_id) VALUES
-    ('Judy',  '203.0.113.16', 'web', 'Thinking of you',                    'processing', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '59 minutes', NOW() - INTERVAL '30 seconds', NOW() - INTERVAL '25 seconds', 1, '11111111-1111-1111-1111-111111111111');
+    ('Judy',  '203.0.113.16', 'web', 'Thinking of you',                    'processed', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '59 minutes', NOW() - INTERVAL '30 seconds', NOW() - INTERVAL '25 seconds', 1, '11111111-1111-1111-1111-111111111111');
 
 -- printed: done
 INSERT INTO messages (sender_name, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, printed_at, attempts, printer_id) VALUES
