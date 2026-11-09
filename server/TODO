@@ -9,7 +9,7 @@
 ## Approval flow
 
 - [ ] SubmitMessage: set initial status (pending / awaiting_approval) based on source instead of always pending
-- [ ] CreateMessage: Validate PrinterID
+- [X] CreateMessage: Validate PrinterID
 - [X] SubmitAdminMessage
 - [ ] Derive source from the caller's identity instead of hardcoding SourceWeb in createMessage
 - [X] Add a reject route (StatusRejected)

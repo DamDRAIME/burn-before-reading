@@ -8,9 +8,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"bbr/internal/messages"
+	"bbr/internal/printers"
 )
 
 type MessageStore struct {
@@ -118,6 +120,10 @@ func (s *MessageStore) CreateMessage(ctx context.Context, params messages.Create
 
 	msg, err := scanMessage(row)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" { // foreign_key_violation
+			return nil, printers.ErrNotFound
+		}
 		return nil, fmt.Errorf("insert message: %w", err)
 	}
 
