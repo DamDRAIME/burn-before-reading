@@ -1,17 +1,25 @@
-FROM golang:1.23-bookworm AS builder
-WORKDIR /app
+# -- Build stage --
+FROM golang:1.27-bookworm AS builder
+WORKDIR /src
 
+# Download dependencies first so this layer is cached until go.mod/go.sum change
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# Static binary (no cgo); tzdata is embedded via the time/tzdata import in main.go
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bbr .
 
-FROM alpine:3.19
-WORKDIR /app
+# -- Runtime stage --
+# distroless/static: CA certificates, no shell, no package manager; runs as uid 65532
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /out/bbr /bbr
 
-COPY --from=builder /app/main .
-
+ENV ADDR=:8080
 EXPOSE 8080
 
-CMD ["./main"]
+USER nonroot:nonroot
+ENTRYPOINT ["/bbr"]

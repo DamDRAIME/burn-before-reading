@@ -1,0 +1,9 @@
+.devcontainer
+.vscode
+.git
+.gitattributes
+Dockerfile
+.dockerignore
+README.md
+TODO
+migrations
