@@ -333,6 +333,7 @@ func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
 		CreatedAt:      msg.CreatedAt,
 		ModeratedAt:    msg.ModeratedAt,
 		ClaimedAt:      msg.ClaimedAt,
+		ProcessedAt:    msg.ProcessedAt,
 		PrintedAt:      msg.PrintedAt,
 		LastUpdatedAt:  msg.LastUpdatedAt,
 	}
@@ -350,6 +351,7 @@ func toMessageAdminResponse(msg *messages.Message) messageAdminResponse {
 		CreatedAt:      msg.CreatedAt,
 		ModeratedAt:    msg.ModeratedAt,
 		ClaimedAt:      msg.ClaimedAt,
+		ProcessedAt:    msg.ProcessedAt,
 		PrintedAt:      msg.PrintedAt,
 		Attempts:       msg.Attempts,
 		LastError:      msg.LastError,
