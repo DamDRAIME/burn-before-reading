@@ -235,21 +235,23 @@ func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg 
 func (s *MessageStore) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*messages.Message, error) {
 	row := s.pool.QueryRow(
 		ctx,
-		`UPDATE messages
-		SET status = $1,
+		`
+		WITH beat AS (UPDATE printers SET last_heartbeat_at = NOW() WHERE id = $1)
+		UPDATE messages
+		SET status = $2,
 			claimed_at = NOW(),
 			attempts = attempts + 1
 		WHERE id = (
 			SELECT id
 			FROM messages
-			WHERE status = $3 AND printer_id = $2
+			WHERE status = $3 AND printer_id = $1
 			ORDER BY created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING `+messageColumns,
-		messages.StatusClaimed,
 		printerID,
+		messages.StatusClaimed,
 		messages.StatusPending,
 	)
 
