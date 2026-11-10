@@ -56,6 +56,7 @@ type printerPublicResponse struct {
 	QuietStart    *printers.TimeOfDay `json:"quiet_start"`
 	QuietEnd      *printers.TimeOfDay `json:"quiet_end"`
 	Timezone      *string             `json:"timezone"`
+	Online        bool                `json:"online"`
 	CreatedAt     time.Time           `json:"created_at"`
 	LastUpdatedAt time.Time           `json:"last_updated_at"`
 }
@@ -68,6 +69,7 @@ type printerAdminResponse struct {
 	QuietEnd        *printers.TimeOfDay `json:"quiet_end"`
 	Timezone        *string             `json:"timezone"`
 	Error           *string             `json:"error"`
+	Online          bool                `json:"online"`
 	CreatedAt       time.Time           `json:"created_at"`
 	LastUpdatedAt   time.Time           `json:"last_updated_at"`
 	LastHeartbeatAt *time.Time          `json:"last_heartbeat_at"`
@@ -270,6 +272,7 @@ func toPrinterPublicResponse(p *printers.Printer) printerPublicResponse {
 		QuietStart:    p.QuietStart,
 		QuietEnd:      p.QuietEnd,
 		Timezone:      p.Timezone,
+		Online:        p.IsOnline(time.Now()),
 		CreatedAt:     p.CreatedAt,
 		LastUpdatedAt: p.LastUpdatedAt,
 	}
@@ -284,6 +287,7 @@ func toPrinterAdminResponse(p *printers.Printer) printerAdminResponse {
 		QuietEnd:        p.QuietEnd,
 		Timezone:        p.Timezone,
 		Error:           p.Error,
+		Online:          p.IsOnline(time.Now()),
 		CreatedAt:       p.CreatedAt,
 		LastUpdatedAt:   p.LastUpdatedAt,
 		LastHeartbeatAt: p.LastHeartbeatAt,

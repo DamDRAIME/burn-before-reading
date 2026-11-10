@@ -61,3 +61,14 @@ func (p *Printer) InQuietHours(now time.Time) bool {
 	}
 	return m >= start || m < end // Quiet hours span midnight
 }
+
+// HeartbeatInterval is how often the Pi is expected to send a heartbeat (keep in sync with the Pi's config).
+const HeartbeatInterval = 10 * time.Second
+
+// OnlineTimeout: 2x the interval, so a single missed beat doesn't flip the status.
+const OnlineTimeout = 2 * HeartbeatInterval
+
+// IsOnline reports whether the printer's last heartbeat is within OnlineTimeout of now.
+func (p *Printer) IsOnline(now time.Time) bool {
+	return p.LastHeartbeatAt != nil && now.Sub(*p.LastHeartbeatAt) < OnlineTimeout
+}

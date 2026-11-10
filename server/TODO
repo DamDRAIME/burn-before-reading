@@ -31,7 +31,7 @@
 - [X] Status reporting endpoints: printing -> printed, or failed with last_error
 - [X] Heartbeat endpoint updating printers.last_seen_at / last_job_at
 - [X] Recover stuck claims: back to pending after a timeout, give up after max attempts
-- [ ] Expose printer health: computed `online` field (last_heartbeat_at within N seconds) in the printer response
+- [X] Expose printer health: computed `online` field (last_heartbeat_at within N seconds) in the printer response
 - [X] Treat a claim as a heartbeat
 
 ## Security hardening
