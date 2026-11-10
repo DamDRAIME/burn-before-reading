@@ -164,7 +164,7 @@ func (h *MessagesHandler) createAdminMessage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	writeJSONResponse(w, http.StatusCreated, toMessagePublicResponse(msg))
+	writeJSONResponse(w, http.StatusCreated, toMessageAdminResponse(msg))
 }
 
 // Doesn't reset `Attempts` so history is preserved and failed messages get one more try
