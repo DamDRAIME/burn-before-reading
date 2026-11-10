@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -203,7 +204,14 @@ func (h *MessagesHandler) getMessageByID(toResponse func(*messages.Message) any)
 func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePaginationParams(r)
 
-	msgs, err := h.service.ListMessages(r.Context(), limit, offset)
+	var statuses []string
+	for _, v := range r.URL.Query()["status"] {
+		statuses = append(statuses, strings.Split(v, ",")...)
+	}
+
+	order := r.URL.Query().Get("order")
+
+	msgs, err := h.service.ListMessages(r.Context(), statuses, order, limit, offset)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -374,6 +382,10 @@ func (h *MessagesHandler) handleError(w http.ResponseWriter, err error) {
 		writeErrorResponse(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, messages.ErrInvalidStatus):
 		writeErrorResponse(w, http.StatusConflict, err.Error())
+	case errors.Is(err, messages.ErrInvalidStatusFilter):
+		writeErrorResponse(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, messages.ErrInvalidOrder):
+		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	default:
 		h.logger.Error("internal server error", "error", err)
 		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")

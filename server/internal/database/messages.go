@@ -179,12 +179,13 @@ func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID
 	return &msg, nil
 }
 
-func (s *MessageStore) ListMessages(ctx context.Context, limit int, offset int) ([]*messages.Message, error) {
+func (s *MessageStore) ListMessages(ctx context.Context, params messages.ListMessagesParams) ([]*messages.Message, error) {
 	rows, err := s.pool.Query(
 		ctx,
-		`SELECT `+messageColumns+` FROM messages ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-		limit,
-		offset,
+		`SELECT `+messageColumns+` FROM messages WHERE ($1::text[] IS NULL OR status = ANY($1)) ORDER BY created_at `+string(params.Order)+` LIMIT $2 OFFSET $3`,
+		params.Statuses,
+		params.Limit,
+		params.Offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list messages: %w", err)

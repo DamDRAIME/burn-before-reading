@@ -3,6 +3,7 @@ package messages
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"strings"
@@ -21,8 +22,11 @@ var (
 	ErrEmptySenderName   = errors.New("sender name cannot be empty")
 	ErrSenderNameTooLong = errors.New("sender name exceeds maximum length")
 
-	ErrNotFound      = errors.New("message not found")
-	ErrInvalidStatus = errors.New("operation not allowed for the current message status")
+	ErrNotFound            = errors.New("message not found")
+	ErrInvalidStatus       = errors.New("operation not allowed for the current message status")
+	
+	ErrInvalidStatusFilter = errors.New("invalid status filter")
+	ErrInvalidOrder        = errors.New("invalid order")
 
 	ErrInQuietHours = errors.New("operation not allowed during quiet hours")
 )
@@ -94,14 +98,37 @@ func (s *Service) GetMessageByID(ctx context.Context, id uuid.UUID) (*Message, e
 
 // -- Listing messages with pagination ----
 
-func (s *Service) ListMessages(ctx context.Context, limit, offset int) ([]*Message, error) {
+func (s *Service) ListMessages(ctx context.Context, rawStatuses []string, rawOrder string, limit, offset int) ([]*Message, error) {
 	if limit <= 0 || limit > 10 {
 		limit = 10 // default limit
 	}
 	if offset < 0 {
 		offset = 0 // default offset
 	}
-	return s.store.ListMessages(ctx, limit, offset)
+
+	order := OrderDescending
+	if raw := strings.ToLower(strings.TrimSpace(rawOrder)); raw != "" {
+		var ok bool
+		if order, ok = ParseOrder(raw); !ok {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidOrder, rawOrder)
+		}
+	}
+
+	var statuses []Status
+	for _, rawStatus := range rawStatuses {
+		status, ok := ParseStatus(strings.TrimSpace(rawStatus))
+		if !ok {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidStatusFilter, rawStatus)
+		}
+		statuses = append(statuses, status)
+	}
+
+	return s.store.ListMessages(ctx, ListMessagesParams{
+		Statuses: statuses,
+		Order:    order,
+		Limit:    limit,
+		Offset:   offset,
+	})
 }
 
 // -- Updating message status ----

@@ -19,6 +19,21 @@ const (
 	StatusFailed           Status = "failed"
 )
 
+var validStatuses = map[Status]bool{
+	StatusAwaitingApproval: true,
+	StatusPending:          true,
+	StatusClaimed:          true,
+	StatusProcessed:        true,
+	StatusPrinted:          true,
+	StatusRejected:         true,
+	StatusFailed:           true,
+}
+
+func ParseStatus(value string) (Status, bool) {
+	status := Status(value)
+	return status, validStatuses[status]
+}
+
 type Source string
 
 const (
@@ -50,4 +65,16 @@ type Message struct {
 	LastError *string
 
 	PrinterID uuid.UUID
+}
+
+type Order string
+
+const (
+	OrderAscending  Order = "asc"
+	OrderDescending Order = "desc"
+)
+
+func ParseOrder(value string) (Order, bool) {
+	order := Order(value)
+	return order, order == OrderAscending || order == OrderDescending
 }

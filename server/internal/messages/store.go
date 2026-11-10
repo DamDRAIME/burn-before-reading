@@ -15,7 +15,7 @@ type Store interface {
 
 	TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to Status) (*Message, error)
 
-	ListMessages(ctx context.Context, limit, offset int) ([]*Message, error)
+	ListMessages(ctx context.Context, params ListMessagesParams) ([]*Message, error)
 
 	MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error)
 
@@ -31,4 +31,11 @@ type CreateMessageParams struct {
 	Source     Source
 	Content    string
 	Status     Status
+}
+
+type ListMessagesParams struct {
+	Statuses []Status
+	Order  Order
+	Limit  int
+	Offset int
 }
