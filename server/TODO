@@ -26,11 +26,12 @@
 ## Printer side
 
 - [X] Add StatusClaimed to the Go model (exists in the DB constraint)
-- [ ] Printer store/service (the `printers` table is unused)
+- [X] Printer store/service
 - [X] Atomic claim endpoint: `FOR UPDATE SKIP LOCKED`, set printer_id, claimed_at, attempts+1
-- [ ] Status reporting endpoints: printing -> printed, or failed with last_error
-- [ ] Heartbeat endpoint updating printers.last_seen_at / last_job_at
-- [ ] Recover stuck claims: back to pending after a timeout, give up after max attempts
+- [X] Status reporting endpoints: printing -> printed, or failed with last_error
+- [X] Heartbeat endpoint updating printers.last_seen_at / last_job_at
+- [X] Recover stuck claims: back to pending after a timeout, give up after max attempts
+- [ ] Expose printer health: computed `online` field (last_heartbeat_at within N seconds) in the admin printer response; treat a claim as a heartbeat
 
 ## Security hardening
 
@@ -44,7 +45,7 @@
 - [X] Map ErrInvalidStatus to 409 Conflict instead of 400
 - [X] Remove duplicate (dead) ErrNotFound case in handleError
 - [ ] Add a status filter to the list route (e.g. ?status=awaiting_approval) for the moderation queue
-- [ ] Update Dockerfile
-- [ ] Run `go mod tidy` (lib/pq appears unused; pgx is used)
+- [X] Update Dockerfile
+- [X] Run `go mod tidy` (lib/pq appears unused; pgx is used)
 - [ ] Add tests for the service layer using a fake Store
 - [ ] Fill in the README "Server" section
