@@ -7,22 +7,22 @@ import (
 )
 
 type Store interface {
-	CreatePrinter(ctx context.Context, params CreatePrinterParams) (*Printer, error)
+	Create(ctx context.Context, params CreateParams) (*Printer, error)
 
-	GetPrinterByID(ctx context.Context, id uuid.UUID) (*Printer, error)
+	Get(ctx context.Context, id uuid.UUID) (*Printer, error)
 
-	ListPrinters(ctx context.Context, limit, offset int) ([]*Printer, error)
+	List(ctx context.Context, limit, offset int) ([]*Printer, error)
 
-	GetPrinterStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error)
+	GetStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error)
 
 	Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string) error
 
-	UpdatePrinter(ctx context.Context, id uuid.UUID, params UpdatePrinterParams) (*Printer, error)
+	Update(ctx context.Context, id uuid.UUID, params UpdateParams) (*Printer, error)
 
 	SetQuietHours(ctx context.Context, id uuid.UUID, params QuietHoursParams) (*Printer, error)
 }
 
-type CreatePrinterParams struct {
+type CreateParams struct {
 	Model         string
 	RecipientName string
 	QuietStart    *TimeOfDay
@@ -30,7 +30,7 @@ type CreatePrinterParams struct {
 	Timezone      *string
 }
 
-type UpdatePrinterParams struct {
+type UpdateParams struct {
 	Model         *string
 	RecipientName *string
 }

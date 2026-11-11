@@ -77,7 +77,7 @@ func scanPrinter(row pgx.Row) (printers.Printer, error) {
 	return p, err
 }
 
-func (s *PrinterStore) CreatePrinter(ctx context.Context, params printers.CreatePrinterParams) (*printers.Printer, error) {
+func (s *PrinterStore) Create(ctx context.Context, params printers.CreateParams) (*printers.Printer, error) {
 
 	row := s.pool.QueryRow(
 		ctx,
@@ -97,7 +97,7 @@ func (s *PrinterStore) CreatePrinter(ctx context.Context, params printers.Create
 	return &p, nil
 }
 
-func (s *PrinterStore) GetPrinterByID(ctx context.Context, id uuid.UUID) (*printers.Printer, error) {
+func (s *PrinterStore) Get(ctx context.Context, id uuid.UUID) (*printers.Printer, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`SELECT `+printerColumns+` FROM printers WHERE id = $1`,
@@ -117,7 +117,7 @@ func (s *PrinterStore) GetPrinterByID(ctx context.Context, id uuid.UUID) (*print
 	return &p, nil
 }
 
-func (s *PrinterStore) ListPrinters(ctx context.Context, limit int, offset int) ([]*printers.Printer, error) {
+func (s *PrinterStore) List(ctx context.Context, limit int, offset int) ([]*printers.Printer, error) {
 	rows, err := s.pool.Query(
 		ctx,
 		`SELECT `+printerColumns+` FROM printers ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
@@ -140,7 +140,7 @@ func (s *PrinterStore) ListPrinters(ctx context.Context, limit int, offset int) 
 	return ps, nil
 }
 
-func (s *PrinterStore) GetPrinterStats(ctx context.Context, id uuid.UUID) (*printers.PrinterStats, error) {
+func (s *PrinterStore) GetStats(ctx context.Context, id uuid.UUID) (*printers.PrinterStats, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`SELECT
@@ -200,7 +200,7 @@ func (s *PrinterStore) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *st
 	return nil
 }
 
-func (s *PrinterStore) UpdatePrinter(ctx context.Context, id uuid.UUID, params printers.UpdatePrinterParams) (*printers.Printer, error) {
+func (s *PrinterStore) Update(ctx context.Context, id uuid.UUID, params printers.UpdateParams) (*printers.Printer, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`UPDATE printers

@@ -9,22 +9,22 @@ import (
 )
 
 type Store interface {
-	CreateMessage(ctx context.Context, params CreateMessageParams) (*Message, error)
+	Create(ctx context.Context, params CreateParams) (*Message, error)
 
-	GetMessageByID(ctx context.Context, id uuid.UUID) (*Message, error)
+	Get(ctx context.Context, id uuid.UUID) (*Message, error)
 
-	TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to Status) (*Message, error)
+	TransitionStatus(ctx context.Context, id uuid.UUID, from, to Status) (*Message, error)
 
-	ListMessages(ctx context.Context, params ListMessagesParams) ([]*Message, error)
+	List(ctx context.Context, params ListParams) ([]*Message, error)
 
 	MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error)
 
-	ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*Message, error)
+	ClaimOldest(ctx context.Context, printerID uuid.UUID) (*Message, error)
 
 	ReleaseStaleClaims(ctx context.Context, timeout time.Duration) (int64, error)
 }
 
-type CreateMessageParams struct {
+type CreateParams struct {
 	PrinterID  uuid.UUID
 	SenderName string
 	SenderIP   *net.IP
@@ -33,7 +33,7 @@ type CreateMessageParams struct {
 	Status     Status
 }
 
-type ListMessagesParams struct {
+type ListParams struct {
 	Statuses []Status
 	Order  Order
 	Limit  int

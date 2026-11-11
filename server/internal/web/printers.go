@@ -23,24 +23,24 @@ func NewPrintersHandler(service *printers.Service, logger *slog.Logger) *Printer
 }
 
 func (h *PrintersHandler) RegisterPublicRoutes(r chi.Router) {
-	r.Get("/printers", h.listPrinters(func(p *printers.Printer) any {
+	r.Get("/printers", h.list(func(p *printers.Printer) any {
 		return toPrinterPublicResponse(p)
 	}))
-	r.Get("/printers/{id}", h.getPrinterByID(func(p *printers.Printer) any {
+	r.Get("/printers/{id}", h.get(func(p *printers.Printer) any {
 		return toPrinterPublicResponse(p)
 	}))
 }
 
 func (h *PrintersHandler) RegisterAdminRoutes(r chi.Router) {
-	r.Post("/printers", h.createPrinter)
-	r.Get("/printers", h.listPrinters(func(p *printers.Printer) any {
+	r.Post("/printers", h.create)
+	r.Get("/printers", h.list(func(p *printers.Printer) any {
 		return toPrinterAdminResponse(p)
 	}))
-	r.Get("/printers/{id}", h.getPrinterByID(func(p *printers.Printer) any {
+	r.Get("/printers/{id}", h.get(func(p *printers.Printer) any {
 		return toPrinterAdminResponse(p)
 	}))
-	r.Patch("/printers/{id}", h.updatePrinter)
-	r.Get("/printers/{id}/stats", h.getPrinterStats)
+	r.Patch("/printers/{id}", h.update)
+	r.Get("/printers/{id}/stats", h.getStats)
 	r.Patch("/printers/{id}/set_quiet_hours", h.setQuietHours)
 	r.Patch("/printers/{id}/clear_quiet_hours", h.clearQuietHours)
 }
@@ -85,7 +85,7 @@ type printerStatsResponse struct {
 	LastPrintedAt   *time.Time `json:"last_printed_at"`
 }
 
-func (h *PrintersHandler) createPrinter(w http.ResponseWriter, r *http.Request) {
+func (h *PrintersHandler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Model         string              `json:"model"`
 		RecipientName string              `json:"recipient_name"`
@@ -98,7 +98,7 @@ func (h *PrintersHandler) createPrinter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	submitParams := printers.SubmitPrinterParams{
+	submitParams := printers.CreateParams{
 		Model:         req.Model,
 		RecipientName: req.RecipientName,
 		QuietStart:    req.QuietStart,
@@ -106,7 +106,7 @@ func (h *PrintersHandler) createPrinter(w http.ResponseWriter, r *http.Request) 
 		Timezone:      req.Timezone,
 	}
 
-	p, err := h.service.SubmitPrinter(r.Context(), submitParams)
+	p, err := h.service.Create(r.Context(), submitParams)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -115,14 +115,14 @@ func (h *PrintersHandler) createPrinter(w http.ResponseWriter, r *http.Request) 
 	writeJSONResponse(w, http.StatusCreated, toPrinterAdminResponse(p))
 }
 
-func (h *PrintersHandler) getPrinterByID(toResponse func(*printers.Printer) any) http.HandlerFunc {
+func (h *PrintersHandler) get(toResponse func(*printers.Printer) any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 		if !ok {
 			return
 		}
 
-		p, err := h.service.GetPrinterByID(r.Context(), id)
+		p, err := h.service.Get(r.Context(), id)
 		if err != nil {
 			h.handleError(w, err)
 			return
@@ -132,11 +132,11 @@ func (h *PrintersHandler) getPrinterByID(toResponse func(*printers.Printer) any)
 	}
 }
 
-func (h *PrintersHandler) listPrinters(toResponse func(*printers.Printer) any) http.HandlerFunc {
+func (h *PrintersHandler) list(toResponse func(*printers.Printer) any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		limit, offset := parsePaginationParams(r)
 
-		ps, err := h.service.ListPrinters(r.Context(), limit, offset)
+		ps, err := h.service.List(r.Context(), limit, offset)
 		if err != nil {
 			h.handleError(w, err)
 			return
@@ -151,13 +151,13 @@ func (h *PrintersHandler) listPrinters(toResponse func(*printers.Printer) any) h
 	}
 }
 
-func (h *PrintersHandler) getPrinterStats(w http.ResponseWriter, r *http.Request) {
+func (h *PrintersHandler) getStats(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 	if !ok {
 		return
 	}
 
-	ps, err := h.service.GetPrinterStats(r.Context(), id)
+	ps, err := h.service.GetStats(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -166,7 +166,7 @@ func (h *PrintersHandler) getPrinterStats(w http.ResponseWriter, r *http.Request
 	writeJSONResponse(w, http.StatusOK, toPrinterStatsResponse(ps))
 }
 
-func (h *PrintersHandler) updatePrinter(w http.ResponseWriter, r *http.Request) {
+func (h *PrintersHandler) update(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 	if !ok {
 		return
@@ -181,12 +181,12 @@ func (h *PrintersHandler) updatePrinter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	updateParams := printers.UpdatePrinterParams{
+	updateParams := printers.UpdateParams{
 		Model:         req.Model,
 		RecipientName: req.RecipientName,
 	}
 
-	p, err := h.service.UpdatePrinter(r.Context(), id, updateParams)
+	p, err := h.service.Update(r.Context(), id, updateParams)
 	if err != nil {
 		h.handleError(w, err)
 		return

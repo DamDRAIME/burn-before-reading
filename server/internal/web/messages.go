@@ -25,25 +25,25 @@ func NewMessagesHandler(service *messages.Service, logger *slog.Logger) *Message
 }
 
 func (h *MessagesHandler) RegisterPublicRoutes(r chi.Router) {
-	r.Post("/messages", h.createMessage)
-	r.Get("/messages/{id}", h.getMessageByID(func(msg *messages.Message) any {
+	r.Post("/messages", h.submit)
+	r.Get("/messages/{id}", h.get(func(msg *messages.Message) any {
 		return toMessagePublicResponse(msg)
 	}))
 }
 
 func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
-	r.Post("/messages", h.createAdminMessage)
-	r.Get("/messages", h.listMessages)
-	r.Get("/messages/{id}", h.getMessageByID(func(msg *messages.Message) any {
+	r.Post("/messages", h.submitAdmin)
+	r.Get("/messages", h.list)
+	r.Get("/messages/{id}", h.get(func(msg *messages.Message) any {
 		return toMessageAdminResponse(msg)
 	}))
-	r.Patch("/messages/{id}/approve", h.approveMessage)
-	r.Patch("/messages/{id}/reject", h.rejectMessage)
-	r.Patch("/messages/{id}/requeue", h.requeueMessage)
+	r.Patch("/messages/{id}/approve", h.approve)
+	r.Patch("/messages/{id}/reject", h.reject)
+	r.Patch("/messages/{id}/requeue", h.requeue)
 }
 
 func (h *MessagesHandler) RegisterPrinterRoutes(r chi.Router) {
-	r.Post("/{id}/messages/oldest/claim", h.claimOldestMessage)
+	r.Post("/{id}/messages/oldest/claim", h.claimOldest)
 	r.Patch("/messages/{id}/processed", h.markAsProcessed)
 	r.Patch("/messages/{id}/printed", h.markAsPrinted)
 	r.Patch("/messages/{id}/failed", h.markAsFailed)
@@ -82,7 +82,7 @@ type messageAdminResponse struct {
 	PrinterID      uuid.UUID  `json:"printer_id"`
 }
 
-func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) submit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Sender    string `json:"sender"`
 		Body      string `json:"body"`
@@ -108,7 +108,7 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	submitParams := messages.SubmitMessageParams{
+	submitParams := messages.SubmitParams{
 		PrinterID:  printerID,
 		SenderName: req.Sender,
 		SenderIP:   &senderIP,
@@ -116,7 +116,7 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 		Content:    req.Body,
 	}
 
-	msg, err := h.service.SubmitMessage(r.Context(), submitParams)
+	msg, err := h.service.Submit(r.Context(), submitParams)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -125,7 +125,7 @@ func (h *MessagesHandler) createMessage(w http.ResponseWriter, r *http.Request) 
 	writeJSONResponse(w, http.StatusCreated, toMessagePublicResponse(msg))
 }
 
-func (h *MessagesHandler) createAdminMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) submitAdmin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Sender    string `json:"sender"`
 		Body      string `json:"body"`
@@ -151,7 +151,7 @@ func (h *MessagesHandler) createAdminMessage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	submitParams := messages.SubmitMessageParams{
+	submitParams := messages.SubmitParams{
 		PrinterID:  printerID,
 		SenderName: req.Sender,
 		SenderIP:   &senderIP,
@@ -159,7 +159,7 @@ func (h *MessagesHandler) createAdminMessage(w http.ResponseWriter, r *http.Requ
 		Content:    req.Body,
 	}
 
-	msg, err := h.service.SubmitMessage(r.Context(), submitParams)
+	msg, err := h.service.Submit(r.Context(), submitParams)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -169,13 +169,13 @@ func (h *MessagesHandler) createAdminMessage(w http.ResponseWriter, r *http.Requ
 }
 
 // Doesn't reset `Attempts` so history is preserved and failed messages get one more try
-func (h *MessagesHandler) requeueMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) requeue(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.RequeueMessage(r.Context(), id)
+	msg, err := h.service.Requeue(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -184,14 +184,14 @@ func (h *MessagesHandler) requeueMessage(w http.ResponseWriter, r *http.Request)
 	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
 }
 
-func (h *MessagesHandler) getMessageByID(toResponse func(*messages.Message) any) http.HandlerFunc {
+func (h *MessagesHandler) get(toResponse func(*messages.Message) any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 		if !ok {
 			return
 		}
 
-		msg, err := h.service.GetMessageByID(r.Context(), id)
+		msg, err := h.service.Get(r.Context(), id)
 		if err != nil {
 			h.handleError(w, err)
 			return
@@ -201,7 +201,7 @@ func (h *MessagesHandler) getMessageByID(toResponse func(*messages.Message) any)
 	}
 }
 
-func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) list(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePaginationParams(r)
 
 	var statuses []string
@@ -211,7 +211,7 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 
 	order := r.URL.Query().Get("order")
 
-	msgs, err := h.service.ListMessages(r.Context(), statuses, order, limit, offset)
+	msgs, err := h.service.List(r.Context(), statuses, order, limit, offset)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -225,13 +225,13 @@ func (h *MessagesHandler) listMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, http.StatusOK, resp)
 }
 
-func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) approve(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.ApproveMessage(r.Context(), id)
+	msg, err := h.service.Approve(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -240,13 +240,13 @@ func (h *MessagesHandler) approveMessage(w http.ResponseWriter, r *http.Request)
 	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
 }
 
-func (h *MessagesHandler) rejectMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) reject(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.RejectMessage(r.Context(), id)
+	msg, err := h.service.Reject(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -308,13 +308,13 @@ func (h *MessagesHandler) markAsFailed(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, http.StatusOK, toMessagePublicResponse(msg))
 }
 
-func (h *MessagesHandler) claimOldestMessage(w http.ResponseWriter, r *http.Request) {
+func (h *MessagesHandler) claimOldest(w http.ResponseWriter, r *http.Request) {
 	printerID, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 	if !ok {
 		return
 	}
 
-	msg, err := h.service.ClaimOldestMessage(r.Context(), printerID)
+	msg, err := h.service.ClaimOldest(r.Context(), printerID)
 	if err != nil {
 		if errors.Is(err, messages.ErrNotFound) {
 			w.WriteHeader(http.StatusNoContent) // Queue is empty

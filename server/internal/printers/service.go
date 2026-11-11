@@ -41,14 +41,6 @@ func NewService(store Store) *Service {
 	return &Service{store: store}
 }
 
-type SubmitPrinterParams struct {
-	Model         string
-	RecipientName string
-	QuietStart    *TimeOfDay
-	QuietEnd      *TimeOfDay
-	Timezone      *string
-}
-
 func normalizeTimezone(timezone *string) (string, bool) {
 	if timezone == nil {
 		return DefaultTimezone, true
@@ -81,7 +73,7 @@ func validateOptionalString(s *string, maxLength int, errEmpty, errTooLong error
 	return &trimmed, nil
 }
 
-func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams) (*Printer, error) {
+func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, error) {
 
 	model, err := validateOptionalString(&params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
 	if err != nil {
@@ -111,7 +103,7 @@ func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams)
 		return nil, ErrInvalidTimezone
 	}
 
-	printerParams := CreatePrinterParams{
+	printerParams := CreateParams{
 		Model:         *model,
 		RecipientName: *recipientName,
 		QuietStart:    params.QuietStart,
@@ -119,25 +111,25 @@ func (s *Service) SubmitPrinter(ctx context.Context, params SubmitPrinterParams)
 		Timezone:      &timezone,
 	}
 
-	return s.store.CreatePrinter(ctx, printerParams)
+	return s.store.Create(ctx, printerParams)
 }
 
-func (s *Service) GetPrinterByID(ctx context.Context, id uuid.UUID) (*Printer, error) {
-	return s.store.GetPrinterByID(ctx, id)
+func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Printer, error) {
+	return s.store.Get(ctx, id)
 }
 
-func (s *Service) ListPrinters(ctx context.Context, limit, offset int) ([]*Printer, error) {
+func (s *Service) List(ctx context.Context, limit, offset int) ([]*Printer, error) {
 	if limit <= 0 || limit > 10 {
 		limit = 10 // default limit
 	}
 	if offset < 0 {
 		offset = 0 // default offset
 	}
-	return s.store.ListPrinters(ctx, limit, offset)
+	return s.store.List(ctx, limit, offset)
 }
 
-func (s *Service) GetPrinterStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error) {
-	return s.store.GetPrinterStats(ctx, id)
+func (s *Service) GetStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error) {
+	return s.store.GetStats(ctx, id)
 }
 
 func (s *Service) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string) error {
@@ -158,7 +150,7 @@ func (s *Service) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string)
 	return s.store.Heartbeat(ctx, id, errorMsg)
 }
 
-func (s *Service) UpdatePrinter(ctx context.Context, id uuid.UUID, params UpdatePrinterParams) (*Printer, error) {
+func (s *Service) Update(ctx context.Context, id uuid.UUID, params UpdateParams) (*Printer, error) {
 	model, err := validateOptionalString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
 	if err != nil {
 		return nil, err
@@ -169,7 +161,7 @@ func (s *Service) UpdatePrinter(ctx context.Context, id uuid.UUID, params Update
 		return nil, err
 	}
 
-	return s.store.UpdatePrinter(ctx, id, UpdatePrinterParams{
+	return s.store.Update(ctx, id, UpdateParams{
 		Model:         model,
 		RecipientName: recipientName,
 	})

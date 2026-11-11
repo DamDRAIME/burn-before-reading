@@ -105,7 +105,7 @@ func (s *MessageStore) resolveNoRowsUpdated(ctx context.Context, id uuid.UUID, e
 	return messages.ErrInvalidStatus
 }
 
-func (s *MessageStore) CreateMessage(ctx context.Context, params messages.CreateMessageParams) (*messages.Message, error) {
+func (s *MessageStore) Create(ctx context.Context, params messages.CreateParams) (*messages.Message, error) {
 
 	row := s.pool.QueryRow(
 		ctx,
@@ -130,7 +130,7 @@ func (s *MessageStore) CreateMessage(ctx context.Context, params messages.Create
 	return &msg, nil
 }
 
-func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messages.Message, error) {
+func (s *MessageStore) Get(ctx context.Context, id uuid.UUID) (*messages.Message, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`SELECT `+messageColumns+` FROM messages WHERE id = $1`,
@@ -150,7 +150,7 @@ func (s *MessageStore) GetMessageByID(ctx context.Context, id uuid.UUID) (*messa
 	return &msg, nil
 }
 
-func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID, from, to messages.Status) (*messages.Message, error) {
+func (s *MessageStore) TransitionStatus(ctx context.Context, id uuid.UUID, from, to messages.Status) (*messages.Message, error) {
 	// Determine the timestamp column to set based on the target status
 	setTimestampColumn := ""
 	if column, ok := transitionTimestampColumn[transition{from: from, to: to}]; ok {
@@ -179,7 +179,7 @@ func (s *MessageStore) TransitionMessageStatus(ctx context.Context, id uuid.UUID
 	return &msg, nil
 }
 
-func (s *MessageStore) ListMessages(ctx context.Context, params messages.ListMessagesParams) ([]*messages.Message, error) {
+func (s *MessageStore) List(ctx context.Context, params messages.ListParams) ([]*messages.Message, error) {
 	rows, err := s.pool.Query(
 		ctx,
 		`SELECT `+messageColumns+` FROM messages WHERE ($1::text[] IS NULL OR status = ANY($1)) ORDER BY created_at `+string(params.Order)+` LIMIT $2 OFFSET $3`,
@@ -232,7 +232,7 @@ func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg 
 	return &msg, nil
 }
 
-func (s *MessageStore) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*messages.Message, error) {
+func (s *MessageStore) ClaimOldest(ctx context.Context, printerID uuid.UUID) (*messages.Message, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`

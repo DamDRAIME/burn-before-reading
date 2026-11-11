@@ -22,9 +22,9 @@ var (
 	ErrEmptySenderName   = errors.New("sender name cannot be empty")
 	ErrSenderNameTooLong = errors.New("sender name exceeds maximum length")
 
-	ErrNotFound            = errors.New("message not found")
-	ErrInvalidStatus       = errors.New("operation not allowed for the current message status")
-	
+	ErrNotFound      = errors.New("message not found")
+	ErrInvalidStatus = errors.New("operation not allowed for the current message status")
+
 	ErrInvalidStatusFilter = errors.New("invalid status filter")
 	ErrInvalidOrder        = errors.New("invalid order")
 
@@ -37,7 +37,7 @@ const (
 )
 
 type PrinterGetter interface {
-	GetPrinterByID(ctx context.Context, id uuid.UUID) (*printers.Printer, error)
+	Get(ctx context.Context, id uuid.UUID) (*printers.Printer, error)
 }
 
 type Service struct {
@@ -52,7 +52,7 @@ func NewService(store Store, printers PrinterGetter) *Service {
 
 // -- Submitting a new message ----
 
-type SubmitMessageParams struct {
+type SubmitParams struct {
 	PrinterID  uuid.UUID
 	SenderName string
 	SenderIP   *net.IP
@@ -60,7 +60,7 @@ type SubmitMessageParams struct {
 	Content    string
 }
 
-func (s *Service) SubmitMessage(ctx context.Context, params SubmitMessageParams) (*Message, error) {
+func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, error) {
 
 	senderName := strings.TrimSpace(params.SenderName)
 	if senderName == "" {
@@ -78,7 +78,7 @@ func (s *Service) SubmitMessage(ctx context.Context, params SubmitMessageParams)
 		return nil, ErrContentTooLong
 	}
 
-	messageParams := CreateMessageParams{
+	messageParams := CreateParams{
 		PrinterID:  params.PrinterID,
 		SenderName: senderName,
 		SenderIP:   params.SenderIP,
@@ -87,18 +87,18 @@ func (s *Service) SubmitMessage(ctx context.Context, params SubmitMessageParams)
 		Status:     StatusPending,
 	}
 
-	return s.store.CreateMessage(ctx, messageParams)
+	return s.store.Create(ctx, messageParams)
 }
 
 // -- Retrieving a message by ID ----
 
-func (s *Service) GetMessageByID(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.GetMessageByID(ctx, id)
+func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.Get(ctx, id)
 }
 
 // -- Listing messages with pagination ----
 
-func (s *Service) ListMessages(ctx context.Context, rawStatuses []string, rawOrder string, limit, offset int) ([]*Message, error) {
+func (s *Service) List(ctx context.Context, rawStatuses []string, rawOrder string, limit, offset int) ([]*Message, error) {
 	if limit <= 0 || limit > 10 {
 		limit = 10 // default limit
 	}
@@ -123,7 +123,7 @@ func (s *Service) ListMessages(ctx context.Context, rawStatuses []string, rawOrd
 		statuses = append(statuses, status)
 	}
 
-	return s.store.ListMessages(ctx, ListMessagesParams{
+	return s.store.List(ctx, ListParams{
 		Statuses: statuses,
 		Order:    order,
 		Limit:    limit,
@@ -133,24 +133,24 @@ func (s *Service) ListMessages(ctx context.Context, rawStatuses []string, rawOrd
 
 // -- Updating message status ----
 
-func (s *Service) ApproveMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionMessageStatus(ctx, id, StatusAwaitingApproval, StatusPending)
+func (s *Service) Approve(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionStatus(ctx, id, StatusAwaitingApproval, StatusPending)
 }
 
-func (s *Service) RejectMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionMessageStatus(ctx, id, StatusAwaitingApproval, StatusRejected)
+func (s *Service) Reject(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionStatus(ctx, id, StatusAwaitingApproval, StatusRejected)
 }
 
-func (s *Service) RequeueMessage(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionMessageStatus(ctx, id, StatusFailed, StatusPending)
+func (s *Service) Requeue(ctx context.Context, id uuid.UUID) (*Message, error) {
+	return s.store.TransitionStatus(ctx, id, StatusFailed, StatusPending)
 }
 
 func (s *Service) MarkAsProcessed(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionMessageStatus(ctx, id, StatusClaimed, StatusProcessed)
+	return s.store.TransitionStatus(ctx, id, StatusClaimed, StatusProcessed)
 }
 
 func (s *Service) MarkAsPrinted(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionMessageStatus(ctx, id, StatusProcessed, StatusPrinted)
+	return s.store.TransitionStatus(ctx, id, StatusProcessed, StatusPrinted)
 }
 
 func (s *Service) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error) {
@@ -159,8 +159,8 @@ func (s *Service) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg strin
 
 // -- Claiming messages ----
 
-func (s *Service) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (*Message, error) {
-	p, err := s.printers.GetPrinterByID(ctx, printerID)
+func (s *Service) ClaimOldest(ctx context.Context, printerID uuid.UUID) (*Message, error) {
+	p, err := s.printers.Get(ctx, printerID)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func (s *Service) ClaimOldestMessage(ctx context.Context, printerID uuid.UUID) (
 	if p.InQuietHours(s.now()) {
 		return nil, ErrInQuietHours
 	}
-	return s.store.ClaimOldestMessage(ctx, printerID)
+	return s.store.ClaimOldest(ctx, printerID)
 }
 
 // -- Recovering stuck claims ----
