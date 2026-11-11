@@ -78,13 +78,18 @@ func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, er
 		return nil, ErrContentTooLong
 	}
 
+	status := StatusAwaitingApproval
+	if params.Source == SourceAdmin {
+		status = StatusPending
+	}
+
 	messageParams := CreateParams{
 		PrinterID:  params.PrinterID,
 		SenderName: senderName,
 		SenderIP:   params.SenderIP,
 		Source:     params.Source,
 		Content:    content,
-		Status:     StatusPending,
+		Status:     status,
 	}
 
 	return s.store.Create(ctx, messageParams)
