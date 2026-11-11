@@ -62,7 +62,7 @@ type SubmitParams struct {
 
 func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, error) {
 
-	senderName := strings.TrimSpace(params.SenderName)
+	senderName := strings.TrimSpace(sanitizeString(params.SenderName, false))
 	if senderName == "" {
 		return nil, ErrEmptySenderName
 	}
