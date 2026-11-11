@@ -41,8 +41,8 @@ func (h *PrintersHandler) RegisterAdminRoutes(r chi.Router) {
 	}))
 	r.Patch("/printers/{id}", h.update)
 	r.Get("/printers/{id}/stats", h.getStats)
-	r.Patch("/printers/{id}/set_quiet_hours", h.setQuietHours)
-	r.Patch("/printers/{id}/clear_quiet_hours", h.clearQuietHours)
+	r.Put("/printers/{id}/quiet_hours", h.setQuietHours)
+	r.Delete("/printers/{id}/quiet_hours", h.clearQuietHours)
 }
 
 func (h *PrintersHandler) RegisterPrinterRoutes(r chi.Router) {
