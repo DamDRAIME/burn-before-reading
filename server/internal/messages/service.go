@@ -50,7 +50,7 @@ func NewService(store Store, printers PrinterGetter) *Service {
 	return &Service{store: store, printers: printers, now: time.Now}
 }
 
-// -- Submitting a new message ----
+// -- Methods ----
 
 type SubmitParams struct {
 	PrinterID  uuid.UUID
@@ -95,13 +95,9 @@ func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, er
 	return s.store.Create(ctx, messageParams)
 }
 
-// -- Retrieving a message by ID ----
-
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Message, error) {
 	return s.store.Get(ctx, id)
 }
-
-// -- Listing messages with pagination ----
 
 func (s *Service) List(ctx context.Context, rawStatuses []string, rawOrder string, limit, offset int) ([]*Message, error) {
 	if limit <= 0 || limit > 10 {
@@ -136,8 +132,6 @@ func (s *Service) List(ctx context.Context, rawStatuses []string, rawOrder strin
 	})
 }
 
-// -- Updating message status ----
-
 func (s *Service) Approve(ctx context.Context, id uuid.UUID) (*Message, error) {
 	return s.store.TransitionStatus(ctx, id, StatusAwaitingApproval, StatusPending)
 }
@@ -161,8 +155,6 @@ func (s *Service) MarkAsPrinted(ctx context.Context, id uuid.UUID) (*Message, er
 func (s *Service) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error) {
 	return s.store.MarkAsFailed(ctx, id, errorMsg)
 }
-
-// -- Claiming messages ----
 
 func (s *Service) ClaimOldest(ctx context.Context, printerID uuid.UUID) (*Message, error) {
 	p, err := s.printers.Get(ctx, printerID)
