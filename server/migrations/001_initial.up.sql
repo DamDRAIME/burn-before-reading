@@ -80,9 +80,8 @@ CREATE TABLE messages (
 
     CONSTRAINT messages_source_check CHECK (
         source IN (
-            'web',
             'admin',
-            'direct'
+            'web'
         )
     )
 );

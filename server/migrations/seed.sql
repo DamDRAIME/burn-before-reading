@@ -41,7 +41,7 @@ INSERT INTO messages (sender_name, sender_ip, source, content, status, created_a
 
 -- pending (retry): a previous print attempt failed but attempts < 3
 INSERT INTO messages (sender_name, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, attempts, last_error, printer_id) VALUES
-    ('Heidi', '203.0.113.14', 'direct', 'Retry me please',                 'pending', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour', 1, 'printer offline', '11111111-1111-1111-1111-111111111111');
+    ('Heidi', '203.0.113.14', 'admin', 'Retry me please',                 'pending', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour', 1, 'printer offline', '11111111-1111-1111-1111-111111111111');
 
 -- claimed: picked up by the printer, not processing yet
 INSERT INTO messages (sender_name, sender_ip, source, content, status, created_at, moderated_at, claimed_at, attempts, printer_id) VALUES
@@ -54,7 +54,7 @@ INSERT INTO messages (sender_name, sender_ip, source, content, status, created_a
 -- printed: done
 INSERT INTO messages (sender_name, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, printed_at, attempts, printer_id) VALUES
     ('Mallory', '203.0.113.17', 'web',    'Welcome home!',                 'printed', NOW() - INTERVAL '1 day',    NOW() - INTERVAL '1 day',    NOW() - INTERVAL '23 hours', NOW() - INTERVAL '23 hours', NOW() - INTERVAL '23 hours', 1, '11111111-1111-1111-1111-111111111111'),
-    ('Niaj',    '203.0.113.18', 'direct', 'Meeting moved to 3pm',          'printed', NOW() - INTERVAL '10 hours', NOW() - INTERVAL '10 hours', NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  2, '22222222-2222-2222-2222-222222222222');
+    ('Niaj',    '203.0.113.18', 'admin',  'Meeting moved to 3pm',          'printed', NOW() - INTERVAL '10 hours', NOW() - INTERVAL '10 hours', NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  2, '22222222-2222-2222-2222-222222222222');
 
 -- rejected: refused at moderation
 INSERT INTO messages (sender_name, sender_ip, source, content, status, created_at, moderated_at, printer_id) VALUES

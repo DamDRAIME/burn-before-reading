@@ -38,7 +38,6 @@ type Source string
 
 const (
 	SourceAdmin  Source = "admin"
-	SourceDirect Source = "direct"
 	SourceWeb    Source = "web"
 )
 
