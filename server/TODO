@@ -36,7 +36,8 @@
 
 ## Security hardening
 
-- [ ] Strip control characters (except) from content to prevent ESC/POS command injection; filter again on the Pi
+- [X] Strip control characters (except newline) from content to prevent ESC/POS command injection ...
+- [ ] ... and filter again on the Pi
 - [ ] Rate limiting per user and per IP
 - [ ] Only use middleware.RealIP behind a trusted reverse proxy (X-Forwarded-For is spoofable)
 - [X] Public GET /messages/{id} leaks sender_ip to anyone with the UUID: use a slimmer public response type

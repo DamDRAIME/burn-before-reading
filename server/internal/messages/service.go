@@ -70,7 +70,7 @@ func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, er
 		return nil, ErrSenderNameTooLong
 	}
 
-	content := strings.TrimSpace(params.Content)
+	content := strings.TrimSpace(sanitizeString(params.Content, true))
 	if content == "" {
 		return nil, ErrEmptyContent
 	}
