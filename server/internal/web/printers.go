@@ -43,10 +43,11 @@ func (h *PrintersHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Get("/printers/{id}/stats", h.getStats)
 	r.Put("/printers/{id}/quiet_hours", h.setQuietHours)
 	r.Delete("/printers/{id}/quiet_hours", h.clearQuietHours)
+	r.Post("/printers/{id}/rotate_token", h.rotateToken)
 }
 
 func (h *PrintersHandler) RegisterPrinterRoutes(r chi.Router) {
-	r.Post("/{id}/heartbeat", h.heartbeat)
+	r.Post("/heartbeat", h.heartbeat)
 }
 
 type printerPublicResponse struct {
@@ -75,6 +76,11 @@ type printerAdminResponse struct {
 	LastHeartbeatAt *time.Time          `json:"last_heartbeat_at"`
 }
 
+type printerCreateResponse struct {
+	printerAdminResponse
+	Token string `json:"token"`
+}
+
 type printerStatsResponse struct {
 	ID              uuid.UUID  `json:"id"`
 	MessagesClaimed int64      `json:"messages_claimed"`
@@ -98,7 +104,7 @@ func (h *PrintersHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	submitParams := printers.CreateParams{
+	createParams := printers.CreateParams{
 		Model:         req.Model,
 		RecipientName: req.RecipientName,
 		QuietStart:    req.QuietStart,
@@ -106,13 +112,17 @@ func (h *PrintersHandler) create(w http.ResponseWriter, r *http.Request) {
 		Timezone:      req.Timezone,
 	}
 
-	p, err := h.service.Create(r.Context(), submitParams)
+	p, token, err := h.service.Create(r.Context(), createParams)
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
 
-	writeJSONResponse(w, http.StatusCreated, toPrinterAdminResponse(p))
+	w.Header().Set("Cache-Control", "no-store") // Prevent caching of the printer token in browser
+	writeJSONResponse(w, http.StatusCreated, printerCreateResponse{
+		printerAdminResponse: toPrinterAdminResponse(p),
+		Token:                token,
+	})
 }
 
 func (h *PrintersHandler) get(toResponse func(*printers.Printer) any) http.HandlerFunc {
@@ -242,7 +252,7 @@ func (h *PrintersHandler) clearQuietHours(w http.ResponseWriter, r *http.Request
 }
 
 func (h *PrintersHandler) heartbeat(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	id, ok := requirePrinterID(w, r, h.logger)
 	if !ok {
 		return
 	}
@@ -262,6 +272,22 @@ func (h *PrintersHandler) heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *PrintersHandler) rotateToken(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	if !ok {
+		return
+	}
+
+	token, err := h.service.RotateToken(r.Context(), id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store") // Prevent caching of the printer token in browser
+	writeJSONResponse(w, http.StatusOK, map[string]string{"token": token})
 }
 
 func toPrinterPublicResponse(p *printers.Printer) printerPublicResponse {

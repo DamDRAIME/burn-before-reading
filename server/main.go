@@ -30,7 +30,7 @@ const (
 	claimTimeout = 2 * time.Minute
 
 	// claimReaperInterval is how often stale claims are checked for.
-	claimReaperInterval = 10 * time.Minute
+	claimReaperInterval = 5 * time.Minute
 )
 
 func main() {
@@ -91,7 +91,7 @@ func run(logger *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, adminToken))
+	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, adminToken, printerService, logger))
 
 	srv := &http.Server{
 		Addr:              addr,

@@ -81,12 +81,13 @@ func (s *PrinterStore) Create(ctx context.Context, params printers.CreateParams)
 
 	row := s.pool.QueryRow(
 		ctx,
-		`INSERT INTO printers (model, recipient_name, quiet_start, quiet_end, timezone) VALUES ($1, $2, $3, $4, $5) RETURNING `+printerColumns,
+		`INSERT INTO printers (model, recipient_name, quiet_start, quiet_end, timezone, token_hash) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+printerColumns,
 		params.Model,
 		params.RecipientName,
 		toPgTime(params.QuietStart),
 		toPgTime(params.QuietEnd),
 		params.Timezone,
+		params.TokenHash,
 	)
 
 	p, err := scanPrinter(row)
@@ -252,4 +253,46 @@ func (s *PrinterStore) SetQuietHours(ctx context.Context, id uuid.UUID, params p
 	}
 
 	return &p, nil
+}
+
+func (s *PrinterStore) GetIDByTokenHash(ctx context.Context, hash []byte) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT id
+		FROM printers
+		WHERE token_hash = $1`,
+		hash,
+	).Scan(&id)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, printers.ErrNotFound
+	}
+
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("get printer ID by token hash: %w", err)
+	}
+
+	return id, nil
+}
+
+func (s *PrinterStore) SetTokenHash(ctx context.Context, id uuid.UUID, hash []byte) error {
+	tag, err := s.pool.Exec(
+		ctx,
+		`UPDATE printers
+		SET token_hash = $1
+		WHERE id = $2`,
+		hash,
+		id,
+	)
+
+	if err != nil {
+		return fmt.Errorf("set token hash: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return printers.ErrNotFound
+	}
+
+	return nil
 }

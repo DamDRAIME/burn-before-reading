@@ -3,7 +3,11 @@
 
 - [ ] Authenticate submitters (session/JWT from the website); only they can POST /messages
 - [ ] Moderator/admin role: only they can approve, reject, list messages and see sender_ip
-- [ ] Per-printer API tokens (stored hashed in `printers`); printers can only poll/claim/report status
+- [X] Per-printer API tokens: SHA-256 hash in `printers.token_hash`, plain token returned once on create, `RequirePrinterToken` middleware puts the printer ID in the request context
+- [X] Printer routes take the printer ID from the token instead of the URL (`/printer/heartbeat`, `/printer/messages/oldest/claim`)
+- [X] Token rotation endpoint: `POST /admin/printers/{id}/rotate_token`
+- [X] Printers can only update their own messages: processed/printed/failed scoped by `printer_id`; another printer's message returns 404, like an unknown ID
+- [ ] Token revocation without issuing a new one (set `token_hash` to NULL, e.g. when retiring a printer)
 - [ ] Group routes in chi behind role-specific middleware
 
 ## Approval flow
@@ -49,5 +53,6 @@
 - [X] Add a status filter to the list route (e.g. ?status=awaiting_approval) for the moderation queue
 - [X] Update Dockerfile
 - [X] Run `go mod tidy` (lib/pq appears unused; pgx is used)
-- [ ] Add tests for the service layer using a fake Store
+- [ ] Add tests for the service layer using a fake Store (start with `printers.Service.Authenticate`: valid token, unknown token → ErrInvalidToken, store error passed through)
+- [ ] Add `httptest` tests for `RequirePrinterToken` with a fake `printerAuthenticator`, including the 500 path (not covered by the manual curl tests)
 - [ ] Fill in the README "Server" section

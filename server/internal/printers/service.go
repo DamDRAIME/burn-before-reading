@@ -22,6 +22,8 @@ var (
 
 	ErrInvalidCharacters = errors.New("text contains control characters")
 
+	ErrInvalidToken = errors.New("invalid printer token")
+
 	ErrNotFound = errors.New("printer not found")
 )
 
@@ -41,35 +43,37 @@ func NewService(store Store) *Service {
 
 // -- Methods ----
 
-func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, error) {
+func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, string, error) {
 
 	model, err := validateOptionalString(&params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if model == nil {
-		return nil, ErrEmptyModel
+		return nil, "", ErrEmptyModel
 	}
 
 	recipientName, err := validateOptionalString(&params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if recipientName == nil {
-		return nil, ErrEmptyRecipientName
+		return nil, "", ErrEmptyRecipientName
 	}
 
 	if (params.QuietStart == nil && params.QuietEnd != nil) || (params.QuietStart != nil && params.QuietEnd == nil) {
-		return nil, ErrInvalidQuietHours
+		return nil, "", ErrInvalidQuietHours
 	}
 	if params.QuietStart != nil && params.QuietEnd != nil && *params.QuietStart == *params.QuietEnd {
-		return nil, ErrEqualQuietHours
+		return nil, "", ErrEqualQuietHours
 	}
 
 	timezone, ok := normalizeTimezone(params.Timezone)
 	if !ok {
-		return nil, ErrInvalidTimezone
+		return nil, "", ErrInvalidTimezone
 	}
+
+	token, hash := GenerateToken()
 
 	printerParams := CreateParams{
 		Model:         *model,
@@ -77,9 +81,15 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, er
 		QuietStart:    params.QuietStart,
 		QuietEnd:      params.QuietEnd,
 		Timezone:      &timezone,
+		TokenHash:     hash,
 	}
 
-	return s.store.Create(ctx, printerParams)
+	printer, err := s.store.Create(ctx, printerParams)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return printer, token, nil
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Printer, error) {
@@ -161,4 +171,31 @@ func (s *Service) ClearQuietHours(ctx context.Context, id uuid.UUID) (*Printer, 
 		QuietEnd:   nil,
 		Timezone:   nil,
 	})
+}
+
+// -- Authentication and Token Management --
+
+func (s *Service) Authenticate(ctx context.Context, token string) (uuid.UUID, error) {
+	if !strings.HasPrefix(token, TokenPrefix) {
+		return uuid.Nil, ErrInvalidToken
+	}
+
+	id, err := s.store.GetIDByTokenHash(ctx, HashToken(token))
+	if errors.Is(err, ErrNotFound) {
+		return uuid.Nil, ErrInvalidToken
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	return id, nil
+}
+
+func (s *Service) RotateToken(ctx context.Context, id uuid.UUID) (string, error) {
+	token, hash := GenerateToken()
+	if err := s.store.SetTokenHash(ctx, id, hash); err != nil {
+		return "", err
+	}
+
+	return token, nil
 }

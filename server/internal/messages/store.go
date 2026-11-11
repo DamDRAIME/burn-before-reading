@@ -15,9 +15,11 @@ type Store interface {
 
 	TransitionStatus(ctx context.Context, id uuid.UUID, from, to Status) (*Message, error)
 
+	TransitionStatusForPrinter(ctx context.Context, id uuid.UUID, from, to Status, printerID uuid.UUID) (*Message, error)
+
 	List(ctx context.Context, params ListParams) ([]*Message, error)
 
-	MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error)
+	MarkAsFailed(ctx context.Context, id, printerID uuid.UUID, errorMsg string) (*Message, error)
 
 	ClaimOldest(ctx context.Context, printerID uuid.UUID) (*Message, error)
 
@@ -35,7 +37,7 @@ type CreateParams struct {
 
 type ListParams struct {
 	Statuses []Status
-	Order  Order
-	Limit  int
-	Offset int
+	Order    Order
+	Limit    int
+	Offset   int
 }

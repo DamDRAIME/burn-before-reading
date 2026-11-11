@@ -20,6 +20,10 @@ type Store interface {
 	Update(ctx context.Context, id uuid.UUID, params UpdateParams) (*Printer, error)
 
 	SetQuietHours(ctx context.Context, id uuid.UUID, params QuietHoursParams) (*Printer, error)
+
+	GetIDByTokenHash(ctx context.Context, hash []byte) (uuid.UUID, error)
+
+	SetTokenHash(ctx context.Context, id uuid.UUID, hash []byte) error
 }
 
 type CreateParams struct {
@@ -28,6 +32,7 @@ type CreateParams struct {
 	QuietStart    *TimeOfDay
 	QuietEnd      *TimeOfDay
 	Timezone      *string
+	TokenHash     []byte
 }
 
 type UpdateParams struct {

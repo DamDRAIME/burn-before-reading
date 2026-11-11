@@ -13,11 +13,12 @@ TRUNCATE messages, printers RESTART IDENTITY CASCADE;
 --   kitchen: no quiet hours, so claims always work (use it to test the printer flow)
 --   office:  overnight quiet hours (22:00-07:00, crosses midnight)
 --   garage:  same-day quiet hours (12:00-13:00), silent for two weeks and reporting an error
+-- Token_hash is bbr_printer_dev_NAME
 
-INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezone, error, created_at, last_heartbeat_at) VALUES
-    ('11111111-1111-1111-1111-111111111111', 'Epson TM-T20III', 'Alice', NULL,    NULL,    'Europe/Brussels', NULL,        NOW() - INTERVAL '30 days', NOW() - INTERVAL '10 seconds'),
-    ('22222222-2222-2222-2222-222222222222', 'Epson TM-T20III', 'Bob',   '22:00', '07:00', 'Europe/Brussels', NULL,        NOW() - INTERVAL '20 days', NOW() - INTERVAL '8 hours'),
-    ('33333333-3333-3333-3333-333333333333', 'Star TSP143',     'Carol', '12:00', '13:00', 'Europe/Brussels', 'paper jam', NOW() - INTERVAL '60 days', NOW() - INTERVAL '14 days');
+INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezone, error, created_at, last_heartbeat_at, token_hash) VALUES
+    ('11111111-1111-1111-1111-111111111111', 'Epson TM-T20III', 'Alice', NULL,    NULL,    'Europe/Brussels', NULL,        NOW() - INTERVAL '30 days', NOW() - INTERVAL '10 seconds', sha256('bbr_printer_dev_alice')),
+    ('22222222-2222-2222-2222-222222222222', 'Epson TM-T20III', 'Bob',   '22:00', '07:00', 'Europe/Brussels', NULL,        NOW() - INTERVAL '20 days', NOW() - INTERVAL '8 hours',    sha256('bbr_printer_dev_bob')),
+    ('33333333-3333-3333-3333-333333333333', 'Star TSP143',     'Carol', '12:00', '13:00', 'Europe/Brussels', 'paper jam', NOW() - INTERVAL '60 days', NOW() - INTERVAL '14 days',    sha256('bbr_printer_dev_carol'));
 
 -- -- Messages -------------------------------------------------
 -- Timestamps follow the status lifecycle:

@@ -144,16 +144,16 @@ func (s *Service) Requeue(ctx context.Context, id uuid.UUID) (*Message, error) {
 	return s.store.TransitionStatus(ctx, id, StatusFailed, StatusPending)
 }
 
-func (s *Service) MarkAsProcessed(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionStatus(ctx, id, StatusClaimed, StatusProcessed)
+func (s *Service) MarkAsProcessed(ctx context.Context, id, printerID uuid.UUID) (*Message, error) {
+	return s.store.TransitionStatusForPrinter(ctx, id, StatusClaimed, StatusProcessed, printerID)
 }
 
-func (s *Service) MarkAsPrinted(ctx context.Context, id uuid.UUID) (*Message, error) {
-	return s.store.TransitionStatus(ctx, id, StatusProcessed, StatusPrinted)
+func (s *Service) MarkAsPrinted(ctx context.Context, id, printerID uuid.UUID) (*Message, error) {
+	return s.store.TransitionStatusForPrinter(ctx, id, StatusProcessed, StatusPrinted, printerID)
 }
 
-func (s *Service) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*Message, error) {
-	return s.store.MarkAsFailed(ctx, id, errorMsg)
+func (s *Service) MarkAsFailed(ctx context.Context, id, printerID uuid.UUID, errorMsg string) (*Message, error) {
+	return s.store.MarkAsFailed(ctx, id, printerID, errorMsg)
 }
 
 func (s *Service) ClaimOldest(ctx context.Context, printerID uuid.UUID) (*Message, error) {

@@ -43,7 +43,7 @@ func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 }
 
 func (h *MessagesHandler) RegisterPrinterRoutes(r chi.Router) {
-	r.Post("/{id}/messages/oldest/claim", h.claimOldest)
+	r.Post("/messages/oldest/claim", h.claimOldest)
 	r.Patch("/messages/{id}/processed", h.markAsProcessed)
 	r.Patch("/messages/{id}/printed", h.markAsPrinted)
 	r.Patch("/messages/{id}/failed", h.markAsFailed)
@@ -261,7 +261,12 @@ func (h *MessagesHandler) markAsProcessed(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	msg, err := h.service.MarkAsProcessed(r.Context(), id)
+	printerID, ok := requirePrinterID(w, r, h.logger)
+	if !ok {
+		return
+	}
+
+	msg, err := h.service.MarkAsProcessed(r.Context(), id, printerID)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -276,7 +281,12 @@ func (h *MessagesHandler) markAsPrinted(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	msg, err := h.service.MarkAsPrinted(r.Context(), id)
+	printerID, ok := requirePrinterID(w, r, h.logger)
+	if !ok {
+		return
+	}
+
+	msg, err := h.service.MarkAsPrinted(r.Context(), id, printerID)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -286,6 +296,11 @@ func (h *MessagesHandler) markAsPrinted(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *MessagesHandler) markAsFailed(w http.ResponseWriter, r *http.Request) {
+	printerID, ok := requirePrinterID(w, r, h.logger)
+	if !ok {
+		return
+	}
+
 	id, ok := parseUUIDParam(w, r, "id", "invalid message ID")
 	if !ok {
 		return
@@ -299,7 +314,7 @@ func (h *MessagesHandler) markAsFailed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, err := h.service.MarkAsFailed(r.Context(), id, req.ErrorMsg)
+	msg, err := h.service.MarkAsFailed(r.Context(), id, printerID, req.ErrorMsg)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -309,7 +324,7 @@ func (h *MessagesHandler) markAsFailed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MessagesHandler) claimOldest(w http.ResponseWriter, r *http.Request) {
-	printerID, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	printerID, ok := requirePrinterID(w, r, h.logger)
 	if !ok {
 		return
 	}

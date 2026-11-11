@@ -26,6 +26,8 @@ CREATE TABLE printers (
     last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_heartbeat_at TIMESTAMPTZ,
 
+    token_hash BYTEA UNIQUE,
+
     CONSTRAINT printers_quiet_hours_check
         CHECK ((quiet_start IS NULL) = (quiet_end IS NULL))
 );

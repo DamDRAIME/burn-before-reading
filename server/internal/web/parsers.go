@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -19,6 +21,25 @@ func parseUUIDParam(w http.ResponseWriter, r *http.Request, param string, errMsg
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+func requirePrinterID(w http.ResponseWriter, r *http.Request, logger *slog.Logger) (uuid.UUID, bool) {
+	id, ok := printerIDFromContext(r.Context())
+	if !ok {
+		logger.Error("printer ID missing from request context. Middleware may not be applied.")
+		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func bearerTokenFromHeader(r *http.Request) (string, bool) {
+	authHeader := r.Header.Get("Authorization")
+	bearer, token, ok := strings.Cut(authHeader, " ")
+	if !ok || !strings.EqualFold("Bearer", bearer) {
+		return "", false
+	}
+	return token, true
 }
 
 func parsePositiveInt(s string) (int, error) {

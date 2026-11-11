@@ -93,9 +93,9 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 // to distinguish a missing message (i.e.: wrong ID) from one whose current status didn't allow the update.
 // The check runs separately from the update, so it may not reflect the exact state at update time;
 // this is harmless as it only picks which error to report.
-func (s *MessageStore) resolveNoRowsUpdated(ctx context.Context, id uuid.UUID, errorPrefix string) error {
+func (s *MessageStore) resolveNoRowsUpdated(ctx context.Context, id uuid.UUID, printerID *uuid.UUID, errorPrefix string) error {
 	var exists bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1)`, id).Scan(&exists)
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id = $1 AND ($2::uuid IS NULL OR printer_id = $2))`, id, printerID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("%s: %w", errorPrefix, err)
 	}
@@ -151,6 +151,14 @@ func (s *MessageStore) Get(ctx context.Context, id uuid.UUID) (*messages.Message
 }
 
 func (s *MessageStore) TransitionStatus(ctx context.Context, id uuid.UUID, from, to messages.Status) (*messages.Message, error) {
+	return s.transitionStatus(ctx, id, from, to, nil)
+}
+
+func (s *MessageStore) TransitionStatusForPrinter(ctx context.Context, id uuid.UUID, from, to messages.Status, printerID uuid.UUID) (*messages.Message, error) {
+	return s.transitionStatus(ctx, id, from, to, &printerID)
+}
+
+func (s *MessageStore) transitionStatus(ctx context.Context, id uuid.UUID, from, to messages.Status, printerID *uuid.UUID) (*messages.Message, error) {
 	// Determine the timestamp column to set based on the target status
 	setTimestampColumn := ""
 	if column, ok := transitionTimestampColumn[transition{from: from, to: to}]; ok {
@@ -160,16 +168,17 @@ func (s *MessageStore) TransitionStatus(ctx context.Context, id uuid.UUID, from,
 	// Compare and swap in one atomic operation to ensure the status transition is safe and prevent race conditions
 	row := s.pool.QueryRow(
 		ctx,
-		`UPDATE messages SET status = $1`+setTimestampColumn+` WHERE id = $2 AND status = $3 RETURNING `+messageColumns,
+		`UPDATE messages SET status = $1`+setTimestampColumn+` WHERE id = $2 AND status = $3 AND ($4::uuid IS NULL OR printer_id = $4) RETURNING `+messageColumns,
 		to,
 		id,
 		from,
+		printerID,
 	)
 
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, s.resolveNoRowsUpdated(ctx, id, "transition message status")
+		return nil, s.resolveNoRowsUpdated(ctx, id, printerID, "transition message status")
 	}
 
 	if err != nil {
@@ -203,13 +212,13 @@ func (s *MessageStore) List(ctx context.Context, params messages.ListParams) ([]
 	return msgs, nil
 }
 
-func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg string) (*messages.Message, error) {
+func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, printerID uuid.UUID, errorMsg string) (*messages.Message, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`UPDATE messages
 		SET status = CASE WHEN attempts < $1 THEN $2 ELSE $3 END,
 			last_error = $4
-		WHERE id = $5 AND status = ANY($6)
+		WHERE id = $5 AND status = ANY($6) AND printer_id = $7
 		RETURNING `+messageColumns,
 		maxAttempts,
 		messages.StatusPending,
@@ -217,12 +226,13 @@ func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, errorMsg 
 		errorMsg,
 		id,
 		[]messages.Status{messages.StatusClaimed, messages.StatusProcessed},
+		printerID,
 	)
 
 	msg, err := scanMessage(row)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, s.resolveNoRowsUpdated(ctx, id, "failed message")
+		return nil, s.resolveNoRowsUpdated(ctx, id, &printerID, "failed message")
 	}
 
 	if err != nil {
