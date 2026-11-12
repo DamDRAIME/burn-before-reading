@@ -59,6 +59,12 @@ CREATE TABLE users (
         CHECK ((invite_hash IS NULL) = (invite_expires_at IS NULL))
 );
 
+CREATE TRIGGER trg_users_last_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW
+    WHEN (OLD.* IS DISTINCT FROM NEW.*)
+    EXECUTE FUNCTION set_last_updated_at();
+
 -- Users-Printers Table
 
 CREATE TABLE user_printers (
@@ -73,6 +79,8 @@ CREATE TABLE user_printers (
 CREATE TABLE user_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    device_name VARCHAR(50) NOT NULL,
 
     token_hash BYTEA NOT NULL UNIQUE,
 

@@ -27,12 +27,12 @@ type Store interface {
 }
 
 type CreateParams struct {
-	PrinterID  uuid.UUID
-	SenderName string
-	SenderIP   *net.IP
-	Source     Source
-	Content    string
-	Status     Status
+	PrinterID uuid.UUID
+	SenderID  *uuid.UUID
+	SenderIP  *net.IP
+	Source    Source
+	Content   string
+	Status    Status
 }
 
 type ListParams struct {

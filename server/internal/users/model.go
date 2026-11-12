@@ -19,9 +19,9 @@ type User struct {
 
 type Session struct {
 	ID     uuid.UUID
-	UserID uuid.UUID
+	UserID uuid.UUID `db:"user_id"`
 
-	TokenHash []byte
+	DeviceName string
 
 	CreatedAt  time.Time
 	LastUsedAt *time.Time

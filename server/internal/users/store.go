@@ -16,9 +16,9 @@ type Store interface {
 
 	SetPrinters(ctx context.Context, userID uuid.UUID, printerIDs []uuid.UUID) (*User, error)
 
-	SetInvite(ctx context.Context, userID uuid.UUID, inviteHash []byte) error
+	SetInvite(ctx context.Context, userID uuid.UUID, inviteHash []byte, inviteExpiresAt time.Time) (*User, error)
 
-	ClaimInvite(ctx context.Context, inviteHash, sessionHash []byte) (uuid.UUID, uuid.UUID, error)
+	ClaimInvite(ctx context.Context, inviteHash, sessionHash []byte, deviceName string) (uuid.UUID, uuid.UUID, error)
 
 	GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, error)
 
@@ -35,5 +35,5 @@ type CreateParams struct {
 	Name            string
 	PrinterIDs      []uuid.UUID
 	InviteHash      []byte
-	InviteExpiresAt *time.Time
+	InviteExpiresAt time.Time
 }
