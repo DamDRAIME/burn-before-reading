@@ -11,7 +11,7 @@ $$ LANGUAGE plpgsql;
 
 CREATE TABLE printers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
+
     model VARCHAR(50) NOT NULL,
 
     recipient_name VARCHAR(20) NOT NULL,
@@ -22,11 +22,11 @@ CREATE TABLE printers (
 
     error TEXT,
 
+    token_hash BYTEA UNIQUE,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_heartbeat_at TIMESTAMPTZ,
-
-    token_hash BYTEA UNIQUE,
 
     CONSTRAINT printers_quiet_hours_check
         CHECK ((quiet_start IS NULL) = (quiet_end IS NULL))
@@ -42,13 +42,52 @@ CREATE TRIGGER trg_printers_last_updated_at
     )
     EXECUTE FUNCTION set_last_updated_at();
 
+-- Users Table
+
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    name VARCHAR(20) NOT NULL,
+
+    invite_hash BYTEA UNIQUE,
+    invite_expires_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT users_invite_check
+        CHECK ((invite_hash IS NULL) = (invite_expires_at IS NULL))
+);
+
+-- Users-Printers Table
+
+CREATE TABLE user_printers (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    printer_id UUID NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+
+    PRIMARY KEY (user_id, printer_id)
+);
+
+-- Users-Sessions Table
+
+CREATE TABLE user_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    token_hash BYTEA NOT NULL UNIQUE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ
+);
+
 -- Messages Table
 
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sequence_number BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
 
-    sender_name VARCHAR(20) NOT NULL,
+    sender_id UUID REFERENCES users(id), -- NULL for admin messages
     sender_ip INET NOT NULL,
     source VARCHAR(20) NOT NULL DEFAULT 'web',
 

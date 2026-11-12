@@ -7,6 +7,8 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+
+	"bbr/internal/token"
 )
 
 var (
@@ -73,7 +75,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, st
 		return nil, "", ErrInvalidTimezone
 	}
 
-	token, hash := GenerateToken()
+	t, hash := token.Generate(token.PrinterPrefix)
 
 	printerParams := CreateParams{
 		Model:         *model,
@@ -89,7 +91,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, st
 		return nil, "", err
 	}
 
-	return printer, token, nil
+	return printer, t, nil
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Printer, error) {
@@ -175,12 +177,12 @@ func (s *Service) ClearQuietHours(ctx context.Context, id uuid.UUID) (*Printer, 
 
 // -- Authentication and Token Management --
 
-func (s *Service) Authenticate(ctx context.Context, token string) (uuid.UUID, error) {
-	if !strings.HasPrefix(token, TokenPrefix) {
+func (s *Service) Authenticate(ctx context.Context, gotToken string) (uuid.UUID, error) {
+	if !strings.HasPrefix(gotToken, string(token.PrinterPrefix)) {
 		return uuid.Nil, ErrInvalidToken
 	}
 
-	id, err := s.store.GetIDByTokenHash(ctx, HashToken(token))
+	id, err := s.store.GetIDByTokenHash(ctx, token.Hash(gotToken))
 	if errors.Is(err, ErrNotFound) {
 		return uuid.Nil, ErrInvalidToken
 	}
@@ -192,7 +194,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (uuid.UUID, er
 }
 
 func (s *Service) RotateToken(ctx context.Context, id uuid.UUID) (string, error) {
-	token, hash := GenerateToken()
+	token, hash := token.Generate(token.PrinterPrefix)
 	if err := s.store.SetTokenHash(ctx, id, hash); err != nil {
 		return "", err
 	}
