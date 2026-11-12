@@ -66,22 +66,14 @@ func (s *UserStore) Create(ctx context.Context, params users.CreateParams) (*use
 		}
 		u = user
 
-		if len(params.PrinterIDs) > 0 {
-			_, err := tx.CopyFrom(
-				ctx,
-				pgx.Identifier{"user_printers"},
-				[]string{"user_id", "printer_id"},
-				pgx.CopyFromRows(func() [][]any {
-					rows := make([][]any, len(params.PrinterIDs))
-					for i, printerID := range params.PrinterIDs {
-						rows[i] = []any{u.ID, printerID}
-					}
-					return rows
-				}()),
-			)
-			if err != nil {
-				return fmt.Errorf("create user printers: %w", err)
-			}
+		_, err = tx.Exec(
+			ctx,
+			`INSERT INTO user_printers (user_id, printer_id) SELECT $1, unnest($2::uuid[])`,
+			u.ID,
+			params.PrinterIDs,
+		)
+		if err != nil {
+			return fmt.Errorf("create user printers: %w", err)
 		}
 		return nil
 	})
@@ -144,22 +136,14 @@ func (s *UserStore) SetPrinters(ctx context.Context, userID uuid.UUID, printerID
 			return fmt.Errorf("delete user printers: %w", err)
 		}
 
-		if len(printerIDs) > 0 {
-			_, err := tx.CopyFrom(
-				ctx,
-				pgx.Identifier{"user_printers"},
-				[]string{"user_id", "printer_id"},
-				pgx.CopyFromRows(func() [][]any {
-					rows := make([][]any, len(printerIDs))
-					for i, printerID := range printerIDs {
-						rows[i] = []any{userID, printerID}
-					}
-					return rows
-				}()),
-			)
-			if err != nil {
-				return fmt.Errorf("create user printers: %w", err)
-			}
+		_, err = tx.Exec(
+			ctx,
+			`INSERT INTO user_printers (user_id, printer_id) SELECT $1, unnest($2::uuid[])`,
+			userID,
+			printerIDs,
+		)
+		if err != nil {
+			return fmt.Errorf("create user printers: %w", err)
 		}
 
 		row := tx.QueryRow(
