@@ -20,11 +20,11 @@ type Store interface {
 
 	ClaimInvite(ctx context.Context, inviteHash, sessionHash []byte, deviceName string) (uuid.UUID, uuid.UUID, error)
 
-	GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, error)
+	GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, uuid.UUID, error)
 
 	ListSessions(ctx context.Context, userID uuid.UUID) ([]*Session, error)
 
-	RevokeSession(ctx context.Context, sessionID uuid.UUID) error
+	RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error
 
 	RevokeAllSessions(ctx context.Context, userID uuid.UUID) error
 

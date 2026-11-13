@@ -141,6 +141,28 @@ func (s *PrinterStore) List(ctx context.Context, limit int, offset int) ([]*prin
 	return ps, nil
 }
 
+func (s *PrinterStore) ListForUser(ctx context.Context, userID uuid.UUID) ([]*printers.Printer, error) {
+	rows, err := s.pool.Query(
+		ctx,
+		`SELECT `+printerColumns+` FROM printers JOIN user_printers up ON id = up.printer_id WHERE up.user_id = $1 ORDER BY recipient_name`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list printers for user: %w", err)
+	}
+	defer rows.Close()
+
+	ps, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*printers.Printer, error) {
+		p, err := scanPrinter(row)
+		return &p, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list printers for user: %w", err)
+	}
+
+	return ps, nil
+}
+
 func (s *PrinterStore) GetStats(ctx context.Context, id uuid.UUID) (*printers.PrinterStats, error) {
 	row := s.pool.QueryRow(
 		ctx,

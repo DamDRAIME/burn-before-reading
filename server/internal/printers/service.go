@@ -46,12 +46,12 @@ func NewService(store Store) *Service {
 
 func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, string, error) {
 
-	model, err := validate.RequiredString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
+	model, err := validate.RequiredString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong, false)
 	if err != nil {
 		return nil, "", err
 	}
 
-	recipientName, err := validate.RequiredString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
+	recipientName, err := validate.RequiredString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong, false)
 	if err != nil {
 		return nil, "", err
 	}
@@ -101,6 +101,10 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]*Printer, erro
 	return s.store.List(ctx, limit, offset)
 }
 
+func (s *Service) ListForUser(ctx context.Context, userID uuid.UUID) ([]*Printer, error) {
+	return s.store.ListForUser(ctx, userID)
+}
+
 func (s *Service) GetStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error) {
 	return s.store.GetStats(ctx, id)
 }
@@ -124,12 +128,12 @@ func (s *Service) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string)
 }
 
 func (s *Service) Update(ctx context.Context, id uuid.UUID, params UpdateParams) (*Printer, error) {
-	model, err := validate.OptionalString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
+	model, err := validate.OptionalString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong, false)
 	if err != nil {
 		return nil, err
 	}
 
-	recipientName, err := validate.OptionalString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
+	recipientName, err := validate.OptionalString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong, false)
 	if err != nil {
 		return nil, err
 	}

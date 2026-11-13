@@ -14,7 +14,7 @@ func sanitizeString(s string, allowNewLines bool, maxNewLines int) string {
 	var countNewLines int
 	for _, r := range sanitized {
 		if r == '\n' {
-			if !allowNewLines || countNewLines > maxNewLines {
+			if !allowNewLines || countNewLines >= maxNewLines {
 				builder.WriteRune(' ')
 				continue
 			}

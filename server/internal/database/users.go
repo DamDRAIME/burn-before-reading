@@ -146,7 +146,18 @@ func (s *UserStore) List(ctx context.Context, limit int, offset int) ([]*users.U
 func (s *UserStore) SetPrinters(ctx context.Context, userID uuid.UUID, printerIDs []uuid.UUID) (*users.User, error) {
 	var u *users.User
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		_, err := tx.Exec(
+		// Lock the user row first: an unknown user is a 404, so a later foreign key
+		// violation can only come from an unknown printer ID in the body.
+		var exists bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 FOR UPDATE)`, userID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("lock user: %w", err)
+		}
+		if !exists {
+			return users.ErrUserNotFound
+		}
+
+		_, err = tx.Exec(
 			ctx,
 			`DELETE FROM user_printers WHERE user_id = $1`,
 			userID,
@@ -231,26 +242,27 @@ func (s *UserStore) ClaimInvite(ctx context.Context, inviteHash, sessionHash []b
 	return userID, sessionID, err
 }
 
-func (s *UserStore) GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, error) {
+func (s *UserStore) GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, uuid.UUID, error) {
 	var userID uuid.UUID
+	var sessionID uuid.UUID
 	err := s.pool.QueryRow(
 		ctx,
-		`SELECT user_id FROM user_sessions WHERE revoked_at IS NULL AND token_hash = $1`,
+		`SELECT user_id, id FROM user_sessions WHERE revoked_at IS NULL AND token_hash = $1`,
 		hash,
-	).Scan(&userID)
+	).Scan(&userID, &sessionID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return userID, users.ErrInvalidToken
+		return userID, sessionID, users.ErrInvalidToken
 	}
 	if err != nil {
-		return userID, fmt.Errorf("get user by session hash: %w", err)
+		return userID, sessionID, fmt.Errorf("get user by session hash: %w", err)
 	}
-	return userID, nil
+	return userID, sessionID, nil
 }
 
 func (s *UserStore) ListSessions(ctx context.Context, userID uuid.UUID) ([]*users.Session, error) {
 	rows, err := s.pool.Query(
 		ctx,
-		`SELECT `+sessionColumns+` FROM user_sessions WHERE user_id = $1`,
+		`SELECT `+sessionColumns+` FROM user_sessions WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -263,12 +275,36 @@ func (s *UserStore) ListSessions(ctx context.Context, userID uuid.UUID) ([]*user
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}
 
+	// No sessions: tell an unknown user (404) apart from a user who has none (200 []).
+	if len(sessions) == 0 {
+		if err := s.requireUser(ctx, userID); err != nil {
+			return nil, err
+		}
+	}
+
 	return sessions, nil
 }
 
-func (s *UserStore) RevokeSession(ctx context.Context, sessionID uuid.UUID) error {
+// requireUser returns ErrUserNotFound when no user has this ID.
+func (s *UserStore) requireUser(ctx context.Context, userID uuid.UUID) error {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, userID).Scan(&exists); err != nil {
+		return fmt.Errorf("check user exists: %w", err)
+	}
+	if !exists {
+		return users.ErrUserNotFound
+	}
+	return nil
+}
+
+func (s *UserStore) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
 	var id uuid.UUID
-	row := s.pool.QueryRow(ctx, `UPDATE user_sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE id = $1 RETURNING id`, sessionID)
+	row := s.pool.QueryRow(
+		ctx,
+		`UPDATE user_sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE id = $1 AND user_id = $2 RETURNING id`,
+		sessionID,
+		userID,
+	)
 	err := row.Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return users.ErrSessionNotFound
@@ -280,9 +316,13 @@ func (s *UserStore) RevokeSession(ctx context.Context, sessionID uuid.UUID) erro
 }
 
 func (s *UserStore) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error {
-	_, err := s.pool.Exec(ctx, `UPDATE user_sessions SET revoked_at = NOW() WHERE revoked_at IS NULL AND user_id = $1`, userID)
+	tag, err := s.pool.Exec(ctx, `UPDATE user_sessions SET revoked_at = NOW() WHERE revoked_at IS NULL AND user_id = $1`, userID)
 	if err != nil {
 		return fmt.Errorf("revoke all sessions: %w", err)
+	}
+	// Nothing revoked: tell an unknown user (404) apart from one with no active session (204).
+	if tag.RowsAffected() == 0 {
+		return s.requireUser(ctx, userID)
 	}
 	return nil
 }
@@ -304,7 +344,7 @@ func (s *UserStore) CanSend(ctx context.Context, userID, printerID uuid.UUID) (b
 // -- Helpers --
 
 // insertUserPrinters links userID to printerIDs. Duplicates are ignored;
-// unknown users or printers return ErrUserOrPrinterNotFound.
+// Callers must make sure userID exists, so a foreign key violation means an unknown printer: ErrUnknownPrinter.
 func insertUserPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID, printerIDs []uuid.UUID) error {
 	_, err := tx.Exec(ctx,
 		`INSERT INTO user_printers (user_id, printer_id)
@@ -314,7 +354,7 @@ func insertUserPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID, printe
 	)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23503" { // foreign_key_violation
-		return users.ErrUserOrPrinterNotFound
+		return users.ErrUnknownPrinter
 	}
 	if err != nil {
 		return fmt.Errorf("insert user printers: %w", err)

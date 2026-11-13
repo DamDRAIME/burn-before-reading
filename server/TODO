@@ -1,21 +1,26 @@
 # TODO
 ## Authentication & authorization
 
-- [ ] Authenticate submitters (session/JWT from the website); only they can POST /messages
-- [ ] Moderator/admin role: only they can approve, reject, list messages and see sender_ip
+- [X] Authenticate submitters: invite → session token (`bbr_user_…`, SHA-256 in `user_sessions.token_hash`); only they can POST /user/messages
+- [ ] Moderator/admin role: only they can approve, reject, list messages and see sender_ip (still a single static `ADMIN_TOKEN`)
 - [X] Per-printer API tokens: SHA-256 hash in `printers.token_hash`, plain token returned once on create, `RequirePrinterToken` middleware puts the printer ID in the request context
 - [X] Printer routes take the printer ID from the token instead of the URL (`/printer/heartbeat`, `/printer/messages/oldest/claim`)
 - [X] Token rotation endpoint: `POST /admin/printers/{id}/rotate_token`
 - [X] Printers can only update their own messages: processed/printed/failed scoped by `printer_id`; another printer's message returns 404, like an unknown ID
 - [ ] Token revocation without issuing a new one (set `token_hash` to NULL, e.g. when retiring a printer)
-- [ ] Group routes in chi behind role-specific middleware
+- [X] Group routes in chi behind role-specific middleware (`/admin`, `/printer`, `/user`)
+- [X] Decide which printers a submitter may target: `user_printers`, managed with `PUT /admin/users/{id}/printers`
+- [X] Take sender_name from the logged-in identity, so people can't impersonate others (`sender_id` → `users.name`)
+- [X] Admin routes for users: create with invite, reissue invite, list/revoke sessions
+- [ ] Write `user_sessions.last_used_at`: it exists in the schema and in the sessions response but is never set, so it is always `null`. Update it in `RequireUserToken` (or in `GetUserIDBySessionHash`), throttled to avoid a write on every request, e.g. `UPDATE user_sessions SET last_used_at = NOW() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minutes')`. Useful to spot and revoke stale devices. Otherwise drop the column.
+- [ ] Persistent session cookie (see `SCRATCHPAD.md`): `POST /users/claim` sets `__Host-bbr_session` (HttpOnly, Secure, SameSite=Lax, Max-Age 400 days) instead of returning the token in the body; `RequireUserToken` reads the bearer header, then the cookie; clear the cookie on 401; refresh it together with the throttled `last_used_at` update
 
 ## Approval flow
 
 - [X] SubmitMessage: set initial status (pending / awaiting_approval) based on source instead of always pending
 - [X] CreateMessage: Validate PrinterID
 - [X] SubmitAdminMessage
-- [ ] Derive source from the caller's identity instead of hardcoding SourceWeb in createMessage
+- [X] Derive source from the caller's identity instead of hardcoding SourceWeb in createMessage (set by the route group: `/user` → web, `/admin` → admin)
 - [X] Add a reject route (StatusRejected)
 - [X] Fix ApproveMessage race (read-then-write): replace UpdateMessageStatus with an atomic *TransitionStatus(id, from, to)* using `UPDATE ... WHERE id = $2 AND status = $3`; on no rows, look up the message to return ErrNotFound vs ErrInvalidStatus
 - [X] Idem for RejectMessage
@@ -26,6 +31,8 @@
 ## Database
 - [X] Add an index column
 - [X] Add a last_updated_at column with a trigger
+- [X] Update `migrations/seed.sql` for the users tables (`sender_id` instead of `sender_name`, users, sessions, invite, user_printers)
+- [ ] `users.last_updated_at` isn't bumped when the user's printers change (`user_printers` is a separate table)
 
 ## Printer side
 
@@ -37,14 +44,20 @@
 - [X] Recover stuck claims: back to pending after a timeout, give up after max attempts
 - [X] Expose printer health: computed `online` field (last_heartbeat_at within N seconds) in the printer response
 - [X] Treat a claim as a heartbeat
+- [ ] ... also during quiet hours: `ClaimOldest` returns `ErrInQuietHours` before the query that sets `last_heartbeat_at`, so a printer that only polls claims shows offline all night
+- [ ] Reset `processed_at` (and `printed_at`) when a message is claimed again after a retry; today it keeps the previous attempt's `processed_at`, earlier than the new `claimed_at`
+- [ ] Decide whether a printer may hold several claims at once (today it can claim again before finishing the previous message)
+- [ ] `DELETE /admin/printers/{id}/quiet_hours` also sets `timezone` to NULL, while create always stores the default timezone
 
 ## Security hardening
 
 - [X] Strip control characters (except newline) from content to prevent ESC/POS command injection ...
 - [ ] ... and filter again on the Pi
+- [X] Strip control characters from printer error strings (`failed`, `heartbeat`); a NUL byte made Postgres reject the update (500)
+- [ ] Limit the length of printer error strings (`last_error`, `printers.error`); only the 16 KB body limit applies today
 - [ ] Rate limiting per user and per IP
 - [ ] Only use middleware.RealIP behind a trusted reverse proxy (X-Forwarded-For is spoofable)
-- [X] Public GET /messages/{id} leaks sender_ip to anyone with the UUID: use a slimmer public response type
+- [X] Public GET /messages/{id} leaks sender_ip to anyone with the UUID: use a slimmer public response type (route since replaced by the authenticated GET /user/messages/{id})
 
 ## Smaller fixes
 
@@ -53,6 +66,11 @@
 - [X] Add a status filter to the list route (e.g. ?status=awaiting_approval) for the moderation queue
 - [X] Update Dockerfile
 - [X] Run `go mod tidy` (lib/pq appears unused; pgx is used)
+- [X] Multi-line messages returned 500 (validator rejected `\n`); newline cap kept 11 instead of 10
+- [X] Reject invalid `limit` / `offset` with 400 instead of silently ignoring or capping them
+- [X] Consistent status codes for users: unknown printer in a body → 400, unknown user in the URL → 404 (sessions list / revoke all included), `printer_ids` required on PUT
+- [X] User handlers return 500 (like printer handlers) when the user ID is missing from the context
+- [ ] Run `gofmt` on `internal/web/auth.go` and `internal/web/mappers.go`
 - [ ] Add tests for the service layer using a fake Store (start with `printers.Service.Authenticate`: valid token, unknown token → ErrInvalidToken, store error passed through)
-- [ ] Add `httptest` tests for `RequirePrinterToken` with a fake `printerAuthenticator`, including the 500 path (not covered by the manual curl tests)
-- [ ] Fill in the README "Server" section
+- [ ] Add `httptest` tests for `RequirePrinterToken` and `RequireUserToken` with fake authenticators, including the 500 path (not covered by the manual curl tests)
+- [X] Fill in the README "Server" section (replaced by the API reference and database diagram)

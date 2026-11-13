@@ -22,9 +22,9 @@ var (
 	ErrInvalidToken  = errors.New("invalid user token")
 	ErrInvalidInvite = errors.New("invalid invite token")
 
-	ErrUserNotFound          = errors.New("user not found")
-	ErrSessionNotFound       = errors.New("session not found")
-	ErrUserOrPrinterNotFound = errors.New("user or printer not found")
+	ErrUserNotFound    = errors.New("user not found")
+	ErrSessionNotFound = errors.New("session not found")
+	ErrUnknownPrinter  = errors.New("unknown printer ID in printer_ids")
 )
 
 const (
@@ -49,7 +49,7 @@ func NewService(store Store) *Service {
 // -- Methods ----
 
 func (s *Service) Create(ctx context.Context, params SubmitParams) (*User, string, error) {
-	name, err := validate.RequiredString(params.Name, MaxUserNameLength, ErrEmptyUserName, ErrUserNameTooLong)
+	name, err := validate.RequiredString(params.Name, MaxUserNameLength, ErrEmptyUserName, ErrUserNameTooLong, false)
 	if err != nil {
 		return nil, "", err
 	}
@@ -85,28 +85,44 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]*User, error) 
 	return s.store.List(ctx, limit, offset)
 }
 
+func (s *Service) ListSessions(ctx context.Context, userID uuid.UUID) ([]*Session, error) {
+	return s.store.ListSessions(ctx, userID)
+}
+
 func (s *Service) SetPrinters(ctx context.Context, userID uuid.UUID, printerIDs []uuid.UUID) (*User, error) {
 	// If printerIDs is empty then it is similar to removing all printers accesses
 	return s.store.SetPrinters(ctx, userID, printerIDs)
 }
 
+func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
+	return s.store.RevokeSession(ctx, userID, sessionID)
+}
+
+func (s *Service) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error {
+	return s.store.RevokeAllSessions(ctx, userID)
+}
+
+func (s *Service) CanSend(ctx context.Context, userID, printerID uuid.UUID) (bool, error) {
+	return s.store.CanSend(ctx, userID, printerID)
+}
+
 // -- Authentication and Token Management --
 
-func (s *Service) Authenticate(ctx context.Context, gotToken string) (uuid.UUID, error) {
+func (s *Service) Authenticate(ctx context.Context, gotToken string) (uuid.UUID, uuid.UUID, error) {
 	if !strings.HasPrefix(gotToken, string(token.SessionPrefix)) {
-		return uuid.Nil, ErrInvalidToken
+		return uuid.Nil, uuid.Nil, ErrInvalidToken
 	}
 
-	id, err := s.store.GetUserIDBySessionHash(ctx, token.Hash(gotToken))
+	userID, sessionID, err := s.store.GetUserIDBySessionHash(ctx, token.Hash(gotToken))
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, uuid.Nil, err
 	}
 
-	return id, nil
+	return userID, sessionID, nil
 }
 
 func (s *Service) ClaimInvite(ctx context.Context, inviteToken, deviceName string) (string, error) {
-	deviceName, err := validate.RequiredString(deviceName, MaxDeviceNameLength, ErrEmptyDeviceName, ErrDeviceNameTooLong)
+	deviceName, err := validate.RequiredString(deviceName, MaxDeviceNameLength, ErrEmptyDeviceName, ErrDeviceNameTooLong, false)
 	if err != nil {
 		return "", err
 	}

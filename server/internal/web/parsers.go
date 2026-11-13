@@ -33,6 +33,16 @@ func requirePrinterID(w http.ResponseWriter, r *http.Request, logger *slog.Logge
 	return id, true
 }
 
+func requireUserID(w http.ResponseWriter, r *http.Request, logger *slog.Logger) (uuid.UUID, bool) {
+	id, ok := userIDFromContext(r.Context())
+	if !ok {
+		logger.Error("user ID missing from request context. Middleware may not be applied.")
+		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
 func bearerTokenFromHeader(r *http.Request) (string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	bearer, token, ok := strings.Cut(authHeader, " ")
@@ -42,41 +52,39 @@ func bearerTokenFromHeader(r *http.Request) (string, bool) {
 	return token, true
 }
 
-func parsePositiveInt(s string) (int, error) {
-	value, err := strconv.Atoi(s)
-	if err != nil || value <= 0 {
-		return 0, fmt.Errorf("invalid positive integer: %s", s)
-	}
-	return value, nil
-}
+const (
+	// DefaultPageLimit is the page size used when ?limit is omitted.
+	DefaultPageLimit = 10
+	// MaxPageLimit is the largest accepted ?limit.
+	MaxPageLimit = 10
+)
 
-func parseNonNegativeInt(s string) (int, error) {
-	value, err := strconv.Atoi(s)
-	if err != nil || value < 0 {
-		return 0, fmt.Errorf("invalid non-negative integer: %s", s)
-	}
-	return value, nil
-}
-
-func parsePaginationParams(r *http.Request) (limit, offset int) {
-	limit = 10
-	offset = 0
-
+// parsePaginationParams reads ?limit (1..MaxPageLimit, default DefaultPageLimit) and ?offset (>= 0, default 0).
+// Like the other query parameters (status, order), an invalid value is rejected with 400 instead of being ignored.
+// It writes the error response itself and returns ok=false in that case.
+func parsePaginationParams(w http.ResponseWriter, r *http.Request) (limit, offset int, ok bool) {
+	limit, offset = DefaultPageLimit, 0
 	query := r.URL.Query()
 
-	if l := query.Get("limit"); l != "" {
-		if parsedLimit, err := parsePositiveInt(l); err == nil {
-			limit = parsedLimit
+	if l, present := query["limit"]; present {
+		v, err := strconv.Atoi(l[0])
+		if err != nil || v < 1 || v > MaxPageLimit {
+			writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("invalid limit: must be an integer between 1 and %d", MaxPageLimit))
+			return 0, 0, false
 		}
+		limit = v
 	}
 
-	if o := query.Get("offset"); o != "" {
-		if parsedOffset, err := parseNonNegativeInt(o); err == nil {
-			offset = parsedOffset
+	if o, present := query["offset"]; present {
+		v, err := strconv.Atoi(o[0])
+		if err != nil || v < 0 {
+			writeErrorResponse(w, http.StatusBadRequest, "invalid offset: must be a non-negative integer")
+			return 0, 0, false
 		}
+		offset = v
 	}
 
-	return limit, offset
+	return limit, offset, true
 }
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {

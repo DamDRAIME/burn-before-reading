@@ -13,6 +13,8 @@ type Store interface {
 
 	List(ctx context.Context, limit, offset int) ([]*Printer, error)
 
+	ListForUser(ctx context.Context, userID uuid.UUID) ([]*Printer, error)
+
 	GetStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error)
 
 	Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string) error

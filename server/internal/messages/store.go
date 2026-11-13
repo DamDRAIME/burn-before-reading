@@ -13,6 +13,8 @@ type Store interface {
 
 	Get(ctx context.Context, id uuid.UUID) (*Message, error)
 
+	GetForSender(ctx context.Context, id, senderID uuid.UUID) (*Message, error)
+
 	TransitionStatus(ctx context.Context, id uuid.UUID, from, to Status) (*Message, error)
 
 	TransitionStatusForPrinter(ctx context.Context, id uuid.UUID, from, to Status, printerID uuid.UUID) (*Message, error)
@@ -36,6 +38,7 @@ type CreateParams struct {
 }
 
 type ListParams struct {
+	SenderID *uuid.UUID
 	Statuses []Status
 	Order    Order
 	Limit    int

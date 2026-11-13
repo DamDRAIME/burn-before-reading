@@ -99,6 +99,8 @@ CREATE TABLE messages (
     sender_ip INET NOT NULL,
     source VARCHAR(20) NOT NULL DEFAULT 'web',
 
+    printer_id UUID NOT NULL REFERENCES printers(id),
+
     content TEXT NOT NULL,
 
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -112,8 +114,6 @@ CREATE TABLE messages (
 
     attempts SMALLINT NOT NULL DEFAULT 0,
     last_error TEXT,
-
-    printer_id UUID NOT NULL REFERENCES printers(id),
 
     CONSTRAINT messages_status_check CHECK (
         status IN (
@@ -138,6 +138,10 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_pending
     ON messages (printer_id, created_at)
     WHERE status = 'pending';
+
+CREATE INDEX idx_messages_sender
+    ON messages (sender_id, sequence_number)
+    WHERE sender_id IS NOT NULL;
 
 CREATE TRIGGER trg_messages_last_updated_at
     BEFORE UPDATE ON messages

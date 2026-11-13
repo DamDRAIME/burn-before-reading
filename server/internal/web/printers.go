@@ -23,23 +23,13 @@ func NewPrintersHandler(service *printers.Service, logger *slog.Logger) *Printer
 	return &PrintersHandler{service: service, logger: logger}
 }
 
-func (h *PrintersHandler) RegisterPublicRoutes(r chi.Router) {
-	r.Get("/printers", h.list(func(p *printers.Printer) any {
-		return toPrinterPublicResponse(p)
-	}))
-	r.Get("/printers/{id}", h.get(func(p *printers.Printer) any {
-		return toPrinterPublicResponse(p)
-	}))
-}
+// -- Routes ----
 
+// RegisterAdminRoutes registers routes mounted under /admin (behind RequireAdminToken).
 func (h *PrintersHandler) RegisterAdminRoutes(r chi.Router) {
+	r.Get("/printers", h.list)
 	r.Post("/printers", h.create)
-	r.Get("/printers", h.list(func(p *printers.Printer) any {
-		return toPrinterAdminResponse(p)
-	}))
-	r.Get("/printers/{id}", h.get(func(p *printers.Printer) any {
-		return toPrinterAdminResponse(p)
-	}))
+	r.Get("/printers/{id}", h.get)
 	r.Patch("/printers/{id}", h.update)
 	r.Get("/printers/{id}/stats", h.getStats)
 	r.Put("/printers/{id}/quiet_hours", h.setQuietHours)
@@ -47,9 +37,42 @@ func (h *PrintersHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Post("/printers/{id}/rotate_token", h.rotateToken)
 }
 
+// RegisterPrinterRoutes registers routes mounted under /printer (behind RequirePrinterToken).
 func (h *PrintersHandler) RegisterPrinterRoutes(r chi.Router) {
 	r.Post("/heartbeat", h.heartbeat)
 }
+
+// RegisterUserRoutes registers routes mounted under /user (behind RequireUserToken).
+func (h *PrintersHandler) RegisterUserRoutes(r chi.Router) {
+	r.Get("/printers", h.listForUser)
+}
+
+// -- Requests ----
+
+type printerCreateRequest struct {
+	Model         string              `json:"model"`
+	RecipientName string              `json:"recipient_name"`
+	QuietStart    *printers.TimeOfDay `json:"quiet_start"`
+	QuietEnd      *printers.TimeOfDay `json:"quiet_end"`
+	Timezone      *string             `json:"timezone"`
+}
+
+type printerUpdateRequest struct {
+	Model         *string `json:"model"`
+	RecipientName *string `json:"recipient_name"`
+}
+
+type printerSetQuietHoursRequest struct {
+	QuietStart *printers.TimeOfDay `json:"quiet_start"`
+	QuietEnd   *printers.TimeOfDay `json:"quiet_end"`
+	Timezone   *string             `json:"timezone"`
+}
+
+type printerHeartbeatRequest struct {
+	Error *string `json:"error"`
+}
+
+// -- Responses ----
 
 type printerPublicResponse struct {
 	ID            uuid.UUID           `json:"id"`
@@ -92,14 +115,27 @@ type printerStatsResponse struct {
 	LastPrintedAt   *time.Time `json:"last_printed_at"`
 }
 
-func (h *PrintersHandler) create(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Model         string              `json:"model"`
-		RecipientName string              `json:"recipient_name"`
-		QuietStart    *printers.TimeOfDay `json:"quiet_start"`
-		QuietEnd      *printers.TimeOfDay `json:"quiet_end"`
-		Timezone      *string             `json:"timezone"`
+// -- Handlers ----
+
+// -- Admin Handlers ----
+
+func (h *PrintersHandler) list(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := parsePaginationParams(w, r)
+	if !ok {
+		return
 	}
+
+	ps, err := h.service.List(r.Context(), limit, offset)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, mapSlice(ps, toPrinterAdminResponse))
+}
+
+func (h *PrintersHandler) create(w http.ResponseWriter, r *http.Request) {
+	var req printerCreateRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -126,55 +162,19 @@ func (h *PrintersHandler) create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *PrintersHandler) get(toResponse func(*printers.Printer) any) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
-		if !ok {
-			return
-		}
-
-		p, err := h.service.Get(r.Context(), id)
-		if err != nil {
-			h.handleError(w, err)
-			return
-		}
-
-		writeJSONResponse(w, http.StatusOK, toResponse(p))
-	}
-}
-
-func (h *PrintersHandler) list(toResponse func(*printers.Printer) any) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		limit, offset := parsePaginationParams(r)
-
-		ps, err := h.service.List(r.Context(), limit, offset)
-		if err != nil {
-			h.handleError(w, err)
-			return
-		}
-
-		resp := make([]any, len(ps))
-		for i, p := range ps {
-			resp[i] = toResponse(p)
-		}
-
-		writeJSONResponse(w, http.StatusOK, resp)
-	}
-}
-
-func (h *PrintersHandler) getStats(w http.ResponseWriter, r *http.Request) {
+func (h *PrintersHandler) get(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 	if !ok {
 		return
 	}
 
-	ps, err := h.service.GetStats(r.Context(), id)
+	p, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
 
-	writeJSONResponse(w, http.StatusOK, toPrinterStatsResponse(ps))
+	writeJSONResponse(w, http.StatusOK, toPrinterAdminResponse(p))
 }
 
 func (h *PrintersHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -183,10 +183,7 @@ func (h *PrintersHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Model         *string `json:"model"`
-		RecipientName *string `json:"recipient_name"`
-	}
+	var req printerUpdateRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -206,17 +203,28 @@ func (h *PrintersHandler) update(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, http.StatusOK, toPrinterAdminResponse(p))
 }
 
+func (h *PrintersHandler) getStats(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	if !ok {
+		return
+	}
+
+	ps, err := h.service.GetStats(r.Context(), id)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, toPrinterStatsResponse(ps))
+}
+
 func (h *PrintersHandler) setQuietHours(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 	if !ok {
 		return
 	}
 
-	var req struct {
-		QuietStart *printers.TimeOfDay `json:"quiet_start"`
-		QuietEnd   *printers.TimeOfDay `json:"quiet_end"`
-		Timezone   *string             `json:"timezone"`
-	}
+	var req printerSetQuietHoursRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -252,29 +260,6 @@ func (h *PrintersHandler) clearQuietHours(w http.ResponseWriter, r *http.Request
 	writeJSONResponse(w, http.StatusOK, toPrinterAdminResponse(p))
 }
 
-func (h *PrintersHandler) heartbeat(w http.ResponseWriter, r *http.Request) {
-	id, ok := requirePrinterID(w, r, h.logger)
-	if !ok {
-		return
-	}
-
-	var req struct {
-		Error *string `json:"error"`
-	}
-	if err := decodeJSONBody(w, r, &req); err != nil && !errors.Is(err, io.EOF) {
-		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	err := h.service.Heartbeat(r.Context(), id, req.Error)
-	if err != nil {
-		h.handleError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (h *PrintersHandler) rotateToken(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
 	if !ok {
@@ -290,6 +275,48 @@ func (h *PrintersHandler) rotateToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store") // Prevent caching of the printer token in browser
 	writeJSONResponse(w, http.StatusOK, map[string]string{"token": token})
 }
+
+// -- Printer Handlers ----
+
+func (h *PrintersHandler) heartbeat(w http.ResponseWriter, r *http.Request) {
+	id, ok := requirePrinterID(w, r, h.logger)
+	if !ok {
+		return
+	}
+
+	var req printerHeartbeatRequest
+	if err := decodeJSONBody(w, r, &req); err != nil && !errors.Is(err, io.EOF) {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	err := h.service.Heartbeat(r.Context(), id, req.Error)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// -- User Handlers ----
+
+func (h *PrintersHandler) listForUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r, h.logger)
+	if !ok {
+		return
+	}
+
+	printers, err := h.service.ListForUser(r.Context(), userID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, http.StatusOK, mapSlice(printers, toPrinterPublicResponse))
+}
+
+// -- Mappers ----
 
 func toPrinterPublicResponse(p *printers.Printer) printerPublicResponse {
 	return printerPublicResponse{
@@ -332,6 +359,8 @@ func toPrinterStatsResponse(s *printers.PrinterStats) printerStatsResponse {
 		LastPrintedAt:   s.LastPrintedAt,
 	}
 }
+
+// -- Error ----
 
 func (h *PrintersHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
