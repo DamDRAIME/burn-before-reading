@@ -8,11 +8,11 @@ import (
 	"net"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"bbr/internal/printers"
+	"bbr/internal/validate"
 )
 
 var (
@@ -32,8 +32,10 @@ var (
 )
 
 const (
-	MaxContentLength    = 500
-	MaxSenderNameLength = 20
+	MaxContentLength     = 500
+	MaxSenderNameLength  = 20
+	ContentAllowNewLines = true
+	ContentMaxNewLines   = 10
 )
 
 type PrinterGetter interface {
@@ -53,29 +55,18 @@ func NewService(store Store, printers PrinterGetter) *Service {
 // -- Methods ----
 
 type SubmitParams struct {
-	PrinterID  uuid.UUID
-	SenderName string
-	SenderIP   *net.IP
-	Source     Source
-	Content    string
+	PrinterID uuid.UUID
+	SenderID  *uuid.UUID
+	SenderIP  *net.IP
+	Source    Source
+	Content   string
 }
 
 func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, error) {
-
-	senderName := strings.TrimSpace(sanitizeString(params.SenderName, false))
-	if senderName == "" {
-		return nil, ErrEmptySenderName
-	}
-	if utf8.RuneCountInString(senderName) > MaxSenderNameLength {
-		return nil, ErrSenderNameTooLong
-	}
-
-	content := strings.TrimSpace(sanitizeString(params.Content, true))
-	if content == "" {
-		return nil, ErrEmptyContent
-	}
-	if utf8.RuneCountInString(content) > MaxContentLength {
-		return nil, ErrContentTooLong
+	sanitized_content := sanitizeString(params.Content, ContentAllowNewLines, ContentMaxNewLines)
+	content, err := validate.RequiredString(sanitized_content, MaxContentLength, ErrEmptyContent, ErrContentTooLong)
+	if err != nil {
+		return nil, err
 	}
 
 	status := StatusAwaitingApproval
@@ -84,12 +75,12 @@ func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, er
 	}
 
 	messageParams := CreateParams{
-		PrinterID:  params.PrinterID,
-		SenderName: senderName,
-		SenderIP:   params.SenderIP,
-		Source:     params.Source,
-		Content:    content,
-		Status:     status,
+		PrinterID: params.PrinterID,
+		SenderID:  params.SenderID,
+		SenderIP:  params.SenderIP,
+		Source:    params.Source,
+		Content:   content,
+		Status:    status,
 	}
 
 	return s.store.Create(ctx, messageParams)

@@ -48,7 +48,7 @@ const maxAttempts = 3
 const messageColumns = `
 	id,
 	sequence_number,
-	sender_name,
+	(SELECT u.name FROM users u WHERE u.id = messages.sender_id) AS sender_name,
 	sender_ip,
 	source,
 	content,
@@ -109,8 +109,8 @@ func (s *MessageStore) Create(ctx context.Context, params messages.CreateParams)
 
 	row := s.pool.QueryRow(
 		ctx,
-		`INSERT INTO messages (sender_name, sender_ip, source, content, status, printer_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+messageColumns,
-		params.SenderName,
+		`INSERT INTO messages (sender_id, sender_ip, source, content, status, printer_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+messageColumns,
+		params.SenderID,
 		params.SenderIP,
 		params.Source,
 		params.Content,

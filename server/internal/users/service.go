@@ -4,24 +4,39 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"bbr/internal/token"
+	"bbr/internal/validate"
 )
 
 var (
-	ErrEmptyName   = errors.New("user name cannot be empty")
-	ErrNameTooLong = errors.New("user name exceeds maximum length")
-	ErrNameTaken   = errors.New("user name is already taken")
+	ErrEmptyUserName   = errors.New("user name cannot be empty")
+	ErrUserNameTooLong = errors.New("user name exceeds maximum length")
+
+	ErrEmptyDeviceName   = errors.New("device name cannot be empty")
+	ErrDeviceNameTooLong = errors.New("device name exceeds maximum length")
 
 	ErrInvalidToken  = errors.New("invalid user token")
 	ErrInvalidInvite = errors.New("invalid invite token")
 
-	ErrNotFound = errors.New("user not found")
+	ErrUserNotFound          = errors.New("user not found")
+	ErrSessionNotFound       = errors.New("session not found")
+	ErrUserOrPrinterNotFound = errors.New("user or printer not found")
 )
 
-const MaxNameLength = 20
+const (
+	MaxUserNameLength   = 20
+	MaxDeviceNameLength = 50
+	InviteExpiryTimeout = 2 * 24 * time.Hour
+)
+
+type SubmitParams struct {
+	Name       string
+	PrinterIDs []uuid.UUID
+}
 
 type Service struct {
 	store Store
@@ -33,21 +48,19 @@ func NewService(store Store) *Service {
 
 // -- Methods ----
 
-func (s *Service) Create(ctx context.Context, params CreateParams) (*User, string, error) {
-	name, err := validateOptionalString(&params.Name, MaxNameLength, ErrEmptyName, ErrNameTooLong)
+func (s *Service) Create(ctx context.Context, params SubmitParams) (*User, string, error) {
+	name, err := validate.RequiredString(params.Name, MaxUserNameLength, ErrEmptyUserName, ErrUserNameTooLong)
 	if err != nil {
 		return nil, "", err
-	}
-	if name == nil {
-		return nil, "", ErrEmptyName
 	}
 
 	inviteToken, hash := token.Generate(token.InvitePrefix)
 
 	userParams := CreateParams{
-		Name:       *name,
-		PrinterIDs: params.PrinterIDs,
-		InviteHash: hash,
+		Name:            name,
+		PrinterIDs:      params.PrinterIDs,
+		InviteHash:      hash,
+		InviteExpiresAt: time.Now().Add(InviteExpiryTimeout),
 	}
 
 	user, err := s.store.Create(ctx, userParams)
@@ -73,6 +86,7 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]*User, error) 
 }
 
 func (s *Service) SetPrinters(ctx context.Context, userID uuid.UUID, printerIDs []uuid.UUID) (*User, error) {
+	// If printerIDs is empty then it is similar to removing all printers accesses
 	return s.store.SetPrinters(ctx, userID, printerIDs)
 }
 
@@ -84,9 +98,6 @@ func (s *Service) Authenticate(ctx context.Context, gotToken string) (uuid.UUID,
 	}
 
 	id, err := s.store.GetUserIDBySessionHash(ctx, token.Hash(gotToken))
-	if errors.Is(err, ErrNotFound) {
-		return uuid.Nil, ErrInvalidToken
-	}
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -94,15 +105,20 @@ func (s *Service) Authenticate(ctx context.Context, gotToken string) (uuid.UUID,
 	return id, nil
 }
 
-func (s *Service) ClaimInvite(ctx context.Context, inviteToken string) (string, error) {
+func (s *Service) ClaimInvite(ctx context.Context, inviteToken, deviceName string) (string, error) {
+	deviceName, err := validate.RequiredString(deviceName, MaxDeviceNameLength, ErrEmptyDeviceName, ErrDeviceNameTooLong)
+	if err != nil {
+		return "", err
+	}
+
 	if !strings.HasPrefix(inviteToken, string(token.InvitePrefix)) {
 		return "", ErrInvalidInvite
 	}
 
 	sessionToken, sessionHash := token.Generate(token.SessionPrefix)
 
-	_, _, err := s.store.ClaimInvite(ctx, token.Hash(inviteToken), sessionHash)
-	if errors.Is(err, ErrNotFound) {
+	_, _, err = s.store.ClaimInvite(ctx, token.Hash(inviteToken), sessionHash, deviceName)
+	if errors.Is(err, ErrUserNotFound) {
 		return "", ErrInvalidInvite
 	}
 	if err != nil {
@@ -114,7 +130,9 @@ func (s *Service) ClaimInvite(ctx context.Context, inviteToken string) (string, 
 
 func (s *Service) ReissueInvite(ctx context.Context, id uuid.UUID) (string, error) {
 	token, hash := token.Generate(token.InvitePrefix)
-	if err := s.store.SetInvite(ctx, id, hash); err != nil {
+	expiresAt := time.Now().Add(InviteExpiryTimeout)
+
+	if _, err := s.store.SetInvite(ctx, id, hash, expiresAt); err != nil {
 		return "", err
 	}
 

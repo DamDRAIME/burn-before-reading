@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"bbr/internal/printers"
+	"bbr/internal/validate"
 )
 
 type PrintersHandler struct {
@@ -348,7 +349,7 @@ func (h *PrintersHandler) handleError(w http.ResponseWriter, err error) {
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, printers.ErrInvalidTimezone):
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, printers.ErrInvalidCharacters):
+	case errors.Is(err, validate.ErrInvalidCharacters):
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, printers.ErrNotFound):
 		writeErrorResponse(w, http.StatusNotFound, err.Error())

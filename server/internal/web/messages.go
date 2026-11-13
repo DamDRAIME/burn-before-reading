@@ -52,7 +52,7 @@ func (h *MessagesHandler) RegisterPrinterRoutes(r chi.Router) {
 type messagePublicResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	SequenceNumber int64      `json:"sequence_number"`
-	SenderName     string     `json:"sender_name"`
+	SenderName     *string    `json:"sender_name"`
 	Content        string     `json:"content"`
 	Status         string     `json:"status"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -66,7 +66,7 @@ type messagePublicResponse struct {
 type messageAdminResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	SequenceNumber int64      `json:"sequence_number"`
-	SenderName     string     `json:"sender_name"`
+	SenderName     *string    `json:"sender_name"`
 	SenderIP       *net.IP    `json:"sender_ip"`
 	Source         string     `json:"source"`
 	Content        string     `json:"content"`
@@ -84,9 +84,9 @@ type messageAdminResponse struct {
 
 func (h *MessagesHandler) submit(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Sender    string `json:"sender"`
-		Body      string `json:"body"`
+		SenderID  string `json:"sender_id"`
 		PrinterID string `json:"printer_id"`
+		Content   string `json:"content"`
 	}
 	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
@@ -102,6 +102,12 @@ func (h *MessagesHandler) submit(w http.ResponseWriter, r *http.Request) {
 		senderIP = net.ParseIP(host)
 	}
 
+	senderID, err := uuid.Parse(req.SenderID)
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid sender ID")
+		return
+	}
+
 	printerID, err := uuid.Parse(req.PrinterID)
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid printer ID")
@@ -109,11 +115,11 @@ func (h *MessagesHandler) submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	submitParams := messages.SubmitParams{
-		PrinterID:  printerID,
-		SenderName: req.Sender,
-		SenderIP:   &senderIP,
-		Source:     messages.SourceWeb,
-		Content:    req.Body,
+		PrinterID: printerID,
+		SenderID:  &senderID,
+		SenderIP:  &senderIP,
+		Source:    messages.SourceWeb,
+		Content:   req.Content,
 	}
 
 	msg, err := h.service.Submit(r.Context(), submitParams)
@@ -152,11 +158,11 @@ func (h *MessagesHandler) submitAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	submitParams := messages.SubmitParams{
-		PrinterID:  printerID,
-		SenderName: req.Sender,
-		SenderIP:   &senderIP,
-		Source:     messages.SourceAdmin,
-		Content:    req.Body,
+		PrinterID: printerID,
+		SenderID:  nil,
+		SenderIP:  &senderIP,
+		Source:    messages.SourceAdmin,
+		Content:   req.Body,
 	}
 
 	msg, err := h.service.Submit(r.Context(), submitParams)
