@@ -8,19 +8,17 @@ import (
 	"net"
 	"strings"
 	"time"
-	"unicode/utf8"
+	"unicode"
 
 	"github.com/google/uuid"
 
 	"bbr/internal/printers"
+	"bbr/internal/validate"
 )
 
 var (
 	ErrEmptyContent   = errors.New("content cannot be empty")
 	ErrContentTooLong = errors.New("content exceeds maximum length")
-
-	ErrEmptySenderName   = errors.New("sender name cannot be empty")
-	ErrSenderNameTooLong = errors.New("sender name exceeds maximum length")
 
 	ErrNotFound      = errors.New("message not found")
 	ErrInvalidStatus = errors.New("operation not allowed for the current message status")
@@ -28,54 +26,64 @@ var (
 	ErrInvalidStatusFilter = errors.New("invalid status filter")
 	ErrInvalidOrder        = errors.New("invalid order")
 
+	ErrMissingSender = errors.New("sender ID is required")
+
 	ErrInQuietHours = errors.New("operation not allowed during quiet hours")
 )
 
 const (
-	MaxContentLength    = 500
-	MaxSenderNameLength = 20
+	MaxContentLength     = 500
+	ContentAllowNewLines = true
+	ContentMaxNewLines   = 10
 )
 
 type PrinterGetter interface {
 	Get(ctx context.Context, id uuid.UUID) (*printers.Printer, error)
 }
 
+type PrinterAccessChecker interface {
+	CanSend(ctx context.Context, userID, printerID uuid.UUID) (bool, error)
+}
+
 type Service struct {
 	store    Store
 	printers PrinterGetter
+	access   PrinterAccessChecker
 	now      func() time.Time
 }
 
-func NewService(store Store, printers PrinterGetter) *Service {
-	return &Service{store: store, printers: printers, now: time.Now}
+func NewService(store Store, printers PrinterGetter, access PrinterAccessChecker) *Service {
+	return &Service{store: store, printers: printers, access: access, now: time.Now}
 }
 
 // -- Methods ----
 
 type SubmitParams struct {
-	PrinterID  uuid.UUID
-	SenderName string
-	SenderIP   *net.IP
-	Source     Source
-	Content    string
+	PrinterID uuid.UUID
+	SenderID  *uuid.UUID
+	SenderIP  *net.IP
+	Source    Source
+	Content   string
 }
 
 func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, error) {
+	if params.Source != SourceAdmin {
+		if params.SenderID == nil {
+			return nil, ErrMissingSender
+		}
+		canSend, err := s.access.CanSend(ctx, *params.SenderID, params.PrinterID)
+		if err != nil {
+			return nil, err
+		}
+		if !canSend {
+			return nil, printers.ErrNotFound
+		}
+	}
 
-	senderName := strings.TrimSpace(sanitizeString(params.SenderName, false))
-	if senderName == "" {
-		return nil, ErrEmptySenderName
-	}
-	if utf8.RuneCountInString(senderName) > MaxSenderNameLength {
-		return nil, ErrSenderNameTooLong
-	}
-
-	content := strings.TrimSpace(sanitizeString(params.Content, true))
-	if content == "" {
-		return nil, ErrEmptyContent
-	}
-	if utf8.RuneCountInString(content) > MaxContentLength {
-		return nil, ErrContentTooLong
+	sanitized_content := sanitizeString(params.Content, ContentAllowNewLines, ContentMaxNewLines)
+	content, err := validate.RequiredString(sanitized_content, MaxContentLength, ErrEmptyContent, ErrContentTooLong, ContentAllowNewLines)
+	if err != nil {
+		return nil, err
 	}
 
 	status := StatusAwaitingApproval
@@ -84,12 +92,12 @@ func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, er
 	}
 
 	messageParams := CreateParams{
-		PrinterID:  params.PrinterID,
-		SenderName: senderName,
-		SenderIP:   params.SenderIP,
-		Source:     params.Source,
-		Content:    content,
-		Status:     status,
+		PrinterID: params.PrinterID,
+		SenderID:  params.SenderID,
+		SenderIP:  params.SenderIP,
+		Source:    params.Source,
+		Content:   content,
+		Status:    status,
 	}
 
 	return s.store.Create(ctx, messageParams)
@@ -99,7 +107,11 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Message, error) {
 	return s.store.Get(ctx, id)
 }
 
-func (s *Service) List(ctx context.Context, rawStatuses []string, rawOrder string, limit, offset int) ([]*Message, error) {
+func (s *Service) GetForSender(ctx context.Context, id, senderID uuid.UUID) (*Message, error) {
+	return s.store.GetForSender(ctx, id, senderID)
+}
+
+func (s *Service) List(ctx context.Context, senderID *uuid.UUID, rawStatuses []string, rawOrder string, limit, offset int) ([]*Message, error) {
 	if limit <= 0 || limit > 10 {
 		limit = 10 // default limit
 	}
@@ -125,6 +137,7 @@ func (s *Service) List(ctx context.Context, rawStatuses []string, rawOrder strin
 	}
 
 	return s.store.List(ctx, ListParams{
+		SenderID: senderID,
 		Statuses: statuses,
 		Order:    order,
 		Limit:    limit,
@@ -153,6 +166,13 @@ func (s *Service) MarkAsPrinted(ctx context.Context, id, printerID uuid.UUID) (*
 }
 
 func (s *Service) MarkAsFailed(ctx context.Context, id, printerID uuid.UUID, errorMsg string) (*Message, error) {
+	errorMsg = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+			return r
+		}
+		return -1 // drop bad characters
+	}, errorMsg)
+	errorMsg = strings.TrimSpace(errorMsg)
 	return s.store.MarkAsFailed(ctx, id, printerID, errorMsg)
 }
 

@@ -7,6 +7,9 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+
+	"bbr/internal/token"
+	"bbr/internal/validate"
 )
 
 var (
@@ -19,8 +22,6 @@ var (
 	ErrInvalidQuietHours = errors.New("quiet hours must have both start and end times")
 	ErrEqualQuietHours   = errors.New("quiet start and end times cannot be equal")
 	ErrInvalidTimezone   = errors.New("invalid timezone")
-
-	ErrInvalidCharacters = errors.New("text contains control characters")
 
 	ErrInvalidToken = errors.New("invalid printer token")
 
@@ -45,20 +46,14 @@ func NewService(store Store) *Service {
 
 func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, string, error) {
 
-	model, err := validateOptionalString(&params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
+	model, err := validate.RequiredString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong, false)
 	if err != nil {
 		return nil, "", err
-	}
-	if model == nil {
-		return nil, "", ErrEmptyModel
 	}
 
-	recipientName, err := validateOptionalString(&params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
+	recipientName, err := validate.RequiredString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong, false)
 	if err != nil {
 		return nil, "", err
-	}
-	if recipientName == nil {
-		return nil, "", ErrEmptyRecipientName
 	}
 
 	if (params.QuietStart == nil && params.QuietEnd != nil) || (params.QuietStart != nil && params.QuietEnd == nil) {
@@ -73,11 +68,11 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, st
 		return nil, "", ErrInvalidTimezone
 	}
 
-	token, hash := GenerateToken()
+	t, hash := token.Generate(token.PrinterPrefix)
 
 	printerParams := CreateParams{
-		Model:         *model,
-		RecipientName: *recipientName,
+		Model:         model,
+		RecipientName: recipientName,
 		QuietStart:    params.QuietStart,
 		QuietEnd:      params.QuietEnd,
 		Timezone:      &timezone,
@@ -89,7 +84,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, st
 		return nil, "", err
 	}
 
-	return printer, token, nil
+	return printer, t, nil
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Printer, error) {
@@ -104,6 +99,10 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]*Printer, erro
 		offset = 0 // default offset
 	}
 	return s.store.List(ctx, limit, offset)
+}
+
+func (s *Service) ListForUser(ctx context.Context, userID uuid.UUID) ([]*Printer, error) {
+	return s.store.ListForUser(ctx, userID)
 }
 
 func (s *Service) GetStats(ctx context.Context, id uuid.UUID) (*PrinterStats, error) {
@@ -129,12 +128,12 @@ func (s *Service) Heartbeat(ctx context.Context, id uuid.UUID, errorMsg *string)
 }
 
 func (s *Service) Update(ctx context.Context, id uuid.UUID, params UpdateParams) (*Printer, error) {
-	model, err := validateOptionalString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong)
+	model, err := validate.OptionalString(params.Model, MaxModelLength, ErrEmptyModel, ErrModelTooLong, false)
 	if err != nil {
 		return nil, err
 	}
 
-	recipientName, err := validateOptionalString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong)
+	recipientName, err := validate.OptionalString(params.RecipientName, MaxRecipientNameLength, ErrEmptyRecipientName, ErrRecipientNameTooLong, false)
 	if err != nil {
 		return nil, err
 	}
@@ -175,12 +174,12 @@ func (s *Service) ClearQuietHours(ctx context.Context, id uuid.UUID) (*Printer, 
 
 // -- Authentication and Token Management --
 
-func (s *Service) Authenticate(ctx context.Context, token string) (uuid.UUID, error) {
-	if !strings.HasPrefix(token, TokenPrefix) {
+func (s *Service) Authenticate(ctx context.Context, gotToken string) (uuid.UUID, error) {
+	if !strings.HasPrefix(gotToken, string(token.PrinterPrefix)) {
 		return uuid.Nil, ErrInvalidToken
 	}
 
-	id, err := s.store.GetIDByTokenHash(ctx, HashToken(token))
+	id, err := s.store.GetIDByTokenHash(ctx, token.Hash(gotToken))
 	if errors.Is(err, ErrNotFound) {
 		return uuid.Nil, ErrInvalidToken
 	}
@@ -192,7 +191,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (uuid.UUID, er
 }
 
 func (s *Service) RotateToken(ctx context.Context, id uuid.UUID) (string, error) {
-	token, hash := GenerateToken()
+	token, hash := token.Generate(token.PrinterPrefix)
 	if err := s.store.SetTokenHash(ctx, id, hash); err != nil {
 		return "", err
 	}

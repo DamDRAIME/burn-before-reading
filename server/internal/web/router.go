@@ -8,19 +8,25 @@ import (
 
 // NewAPIRouter builds the /api/v1 routes.
 // Kept separate from `main.go` so tests can exercise routing and auth without a database.
-func NewAPIRouter(msgHandler *MessagesHandler, pHandler *PrintersHandler, adminToken string, printerAuth printerAuthenticator, logger *slog.Logger) chi.Router {
+func NewAPIRouter(mHandler *MessagesHandler, pHandler *PrintersHandler, uHandler *UsersHandler, adminToken string, pAuth printerAuthenticator, uAuth userAuthenticator, logger *slog.Logger) chi.Router {
 	r := chi.NewRouter()
-	msgHandler.RegisterPublicRoutes(r)
-	pHandler.RegisterPublicRoutes(r)
+	uHandler.RegisterPublicRoutes(r)
 	r.Route("/admin", func(r chi.Router) {
 		r.Use(RequireAdminToken(adminToken))
-		msgHandler.RegisterAdminRoutes(r)
+		mHandler.RegisterAdminRoutes(r)
 		pHandler.RegisterAdminRoutes(r)
+		uHandler.RegisterAdminRoutes(r)
 	})
 	r.Route("/printer", func(r chi.Router) {
-		r.Use(RequirePrinterToken(printerAuth, logger))
-		msgHandler.RegisterPrinterRoutes(r)
+		r.Use(RequirePrinterToken(pAuth, logger))
+		mHandler.RegisterPrinterRoutes(r)
 		pHandler.RegisterPrinterRoutes(r)
+	})
+	r.Route("/user", func(r chi.Router) {
+		r.Use(RequireUserToken(uAuth, logger))
+		mHandler.RegisterUserRoutes(r)
+		pHandler.RegisterUserRoutes(r)
+		uHandler.RegisterUserRoutes(r)
 	})
 	return r
 }

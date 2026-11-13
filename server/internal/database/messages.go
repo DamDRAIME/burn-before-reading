@@ -48,9 +48,10 @@ const maxAttempts = 3
 const messageColumns = `
 	id,
 	sequence_number,
-	sender_name,
+	(SELECT u.name FROM users u WHERE u.id = messages.sender_id) AS sender_name,
 	sender_ip,
 	source,
+	printer_id,
 	content,
 	status,
 	created_at,
@@ -60,8 +61,7 @@ const messageColumns = `
 	printed_at,
 	last_updated_at,
 	attempts,
-	last_error,
-	printer_id
+	last_error
 `
 
 func scanMessage(row pgx.Row) (messages.Message, error) {
@@ -73,6 +73,7 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.SenderName,
 		&msg.SenderIP,
 		&msg.Source,
+		&msg.PrinterID,
 		&msg.Content,
 		&msg.Status,
 		&msg.CreatedAt,
@@ -83,7 +84,6 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.LastUpdatedAt,
 		&msg.Attempts,
 		&msg.LastError,
-		&msg.PrinterID,
 	)
 
 	return msg, err
@@ -109,8 +109,8 @@ func (s *MessageStore) Create(ctx context.Context, params messages.CreateParams)
 
 	row := s.pool.QueryRow(
 		ctx,
-		`INSERT INTO messages (sender_name, sender_ip, source, content, status, printer_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+messageColumns,
-		params.SenderName,
+		`INSERT INTO messages (sender_id, sender_ip, source, content, status, printer_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+messageColumns,
+		params.SenderID,
 		params.SenderIP,
 		params.Source,
 		params.Content,
@@ -145,6 +145,27 @@ func (s *MessageStore) Get(ctx context.Context, id uuid.UUID) (*messages.Message
 
 	if err != nil {
 		return nil, fmt.Errorf("get message by id: %w", err)
+	}
+
+	return &msg, nil
+}
+
+func (s *MessageStore) GetForSender(ctx context.Context, id, senderID uuid.UUID) (*messages.Message, error) {
+	row := s.pool.QueryRow(
+		ctx,
+		`SELECT `+messageColumns+` FROM messages WHERE id = $1 AND sender_id = $2`,
+		id,
+		senderID,
+	)
+
+	msg, err := scanMessage(row)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, messages.ErrNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("get message for sender: %w", err)
 	}
 
 	return &msg, nil
@@ -191,7 +212,11 @@ func (s *MessageStore) transitionStatus(ctx context.Context, id uuid.UUID, from,
 func (s *MessageStore) List(ctx context.Context, params messages.ListParams) ([]*messages.Message, error) {
 	rows, err := s.pool.Query(
 		ctx,
-		`SELECT `+messageColumns+` FROM messages WHERE ($1::text[] IS NULL OR status = ANY($1)) ORDER BY created_at `+string(params.Order)+` LIMIT $2 OFFSET $3`,
+		`SELECT `+messageColumns+` FROM messages
+		WHERE ($1::uuid IS NULL OR sender_id = $1)
+			AND ($2::text[] IS NULL OR status = ANY($2))
+		ORDER BY sequence_number `+string(params.Order)+` LIMIT $3 OFFSET $4`,
+		params.SenderID,
 		params.Statuses,
 		params.Limit,
 		params.Offset,

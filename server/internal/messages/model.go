@@ -37,15 +37,15 @@ func ParseStatus(value string) (Status, bool) {
 type Source string
 
 const (
-	SourceAdmin  Source = "admin"
-	SourceWeb    Source = "web"
+	SourceAdmin Source = "admin"
+	SourceWeb   Source = "web"
 )
 
 type Message struct {
 	ID             uuid.UUID
 	SequenceNumber int64
 
-	SenderName string
+	SenderName *string
 	SenderIP   *net.IP
 	Source     Source
 
