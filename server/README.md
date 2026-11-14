@@ -362,6 +362,11 @@ The seeded printers and users have fixed, readable dev tokens. They must never b
 ADMIN_TOKEN=mytoken go run .
 ```
 
+Set `WEB_DIR` to serve the website from the same origin (see [web/README.md](../web/README.md)):
+```shell
+WEB_DIR=../web ADMIN_TOKEN=mytoken go run .
+```
+
 Submit a message as Dave:
 ```shell
 curl -s -X POST localhost:8080/api/v1/user/messages -H 'Authorization: Bearer bbr_user_dev_dave' \

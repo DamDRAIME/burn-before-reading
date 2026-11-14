@@ -5,10 +5,12 @@ services:
     container_name: server_dev_api
     volumes:
       - ..:/workspace:cached
+      - ../../web:/web:cached
 
     command: sleep infinity
 
     environment:
+      - WEB_DIR=/web
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=myuser

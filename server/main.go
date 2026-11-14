@@ -97,6 +97,12 @@ func run(logger *slog.Logger) error {
 	})
 	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, userHandler, adminToken, printerService, userService, logger))
 
+	// Optional: serve the frontend from the same origin as the API.
+	if webDir := os.Getenv("WEB_DIR"); webDir != "" {
+		r.Handle("/*", web.NewStaticHandler(webDir))
+		logger.Info("serving frontend", "dir", webDir)
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,

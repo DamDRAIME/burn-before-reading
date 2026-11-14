@@ -38,6 +38,9 @@
         
         }
     },
-    "forwardPorts": [],
+    "forwardPorts": [8080],
+    "portsAttributes": {
+        "8080": { "label": "API + web", "onAutoForward": "notify" }
+    },
     "postCreateCommand": "go mod download && go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3 && apt-get update && apt-get install -y postgresql-client"
 }
