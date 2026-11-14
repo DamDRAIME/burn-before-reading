@@ -1,4 +1,5 @@
 import { h } from './dom.js';
+import { installDither } from './dither.js';
 import { api, ApiError, onUnauthorized } from './api.js';
 import { auth } from './auth.js';
 import { writePage } from './pages/write.js';
@@ -112,4 +113,5 @@ async function render() {
   window.scrollTo(0, 0);
 }
 
+installDither();
 render();

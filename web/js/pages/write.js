@@ -138,7 +138,11 @@ export function writePage(ctx) {
     const s = stage();
     const list = printers();
     fill(left, 
-      h('h1', { class: 'display' }, 'Burn', h('br'), 'Before', h('br'), 'Reading'),
+      // One element per line so each gets its own dither; the last line a bit more.
+      h('h1', { class: 'display', 'aria-label': 'Burn Before Reading' },
+        h('span', { class: 'dither-line dither-line--light', 'aria-hidden': 'true' }, 'Burn'),
+        h('span', { class: 'dither-line dither-line--light', 'aria-hidden': 'true' }, 'Before'),
+        h('span', { class: 'dither-line', 'aria-hidden': 'true' }, 'Reading')),
       h('p', { class: 'lede' }, s === 'draft'
         ? 'Write on the receipt. It prints exactly like this, in someone’s home, within seconds.'
         : TERMINAL_STATUSES.has(st.message.status)

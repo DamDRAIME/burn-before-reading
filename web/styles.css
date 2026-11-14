@@ -429,6 +429,47 @@ hr.rule { margin: 0; border: 0; border-top: 1px dashed var(--rule); }
 
 .pager { display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
 
+/* -- Thermal dithering --
+   Shapes dissolve into 2px dots at their bottom edge, the way a thermal head
+   renders a gradient. The ramps come from js/dither.js; without them (no canvas)
+   the mask declarations are invalid and the shapes simply stay solid. */
+
+.sun { --dither: var(--dither-ramp-lg); --dither-h: 160px; }
+.emblem__dot { --dither: var(--dither-ramp-sm); --dither-h: 32px; }
+
+/* Titles: the foot of each line thins out a little ("Burn" and "Before" even less).
+   A mask clips to the box, so the box must hold every glyph: fit-content keeps a word
+   wider than its column (Reading) whole, and the padding (cancelled by the margin)
+   makes room for descenders (g, y). */
+.dither-line, .history .display {
+  --dither: var(--dither-ramp-text); --dither-h: 46px; /* 20px fade + 26px flat tail, see dither.js */
+  width: fit-content; padding: 0 0.06em 0.2em 0; margin: 0 -0.06em -0.2em 0;
+}
+/* Write title: randomly scattered dots over a taller band, in a wide tile. */
+.dither-line { display: block; --dither: var(--dither-ramp-title); --dither-h: 66px; --dither-w: 128px; } /* 40px fade + 26px tail */
+.dither-line--light { --dither: var(--dither-ramp-title-light); }
+
+.sun, .emblem__dot:not(.emblem__dot--small), .dither-line, .history .display {
+  /* Solid above the ramp, dotted ramp along the bottom. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--dither-h) + 1px) no-repeat,
+    var(--dither) bottom / var(--dither-w, 16px) var(--dither-h) repeat-x;
+  mask:
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--dither-h) + 1px) no-repeat,
+    var(--dither) bottom / var(--dither-w, 16px) var(--dither-h) repeat-x;
+}
+
+/* The title band is tuned for the full 88px titles (800px and wider); on smaller
+   type it would cover whole words, so the titles stay solid there. */
+@media (max-width: 799px) {
+  .dither-line, .history .display { -webkit-mask: none; mask: none; }
+}
+
+/* The step being worked on prints at half density: a 2px checkerboard. */
+.steps__item.is-current .steps__bar {
+  background: repeating-conic-gradient(var(--accent) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+}
+
 /* -- Small screens -- */
 
 @media (max-width: 720px) {
