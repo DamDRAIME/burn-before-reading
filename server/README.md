@@ -38,7 +38,7 @@ Every protected route expects an `Authorization: Bearer <token>` header. The tok
 ### User invites and sessions
 - **Invite:** `POST /api/v1/admin/users` creates the user and returns a `bbr_invite_…` invite, valid for **2 days** and usable **once**. `POST /api/v1/admin/users/{id}/invite` issues a new one; the previous invite stops working, but existing sessions are kept.
 - **Claim:** the user's device sends the invite to `POST /api/v1/users/claim` with a `device_name`. The response holds a `bbr_user_…` session token. An unknown, expired or already used invite gets `401`.
-- **Sessions:** a user can have several sessions, one per device. An admin can list them and revoke one or all of them. A revoked session token gets `401`.
+- **Sessions:** a user can have several sessions, one per device. An admin can list them and revoke one or all of them. A revoked session token gets `401`. Each session's `last_used_at` is updated when its token authenticates a request, at most once every 5 minutes, which helps spot stale devices to revoke.
 - **Printer access:** a user may only send to the printers they are linked to (`user_printers`). Sending to any other printer gets `404 printer not found`, so other printers' existence isn't revealed. `GET /api/v1/user/printers` lists the allowed ones.
 
 ## Database
@@ -65,7 +65,7 @@ erDiagram
         VARCHAR device_name "1..50 chars"
         BYTEA token_hash UK "sha256 of the bbr_user_ token"
         TIMESTAMPTZ created_at
-        TIMESTAMPTZ last_used_at "not written yet"
+        TIMESTAMPTZ last_used_at "set on auth, at most every 5 min"
         TIMESTAMPTZ revoked_at "NULL while active"
     }
     user_printers {

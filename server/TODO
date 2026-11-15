@@ -12,7 +12,7 @@
 - [X] Decide which printers a submitter may target: `user_printers`, managed with `PUT /admin/users/{id}/printers`
 - [X] Take sender_name from the logged-in identity, so people can't impersonate others (`sender_id` → `users.name`)
 - [X] Admin routes for users: create with invite, reissue invite, list/revoke sessions
-- [ ] Write `user_sessions.last_used_at`: it exists in the schema and in the sessions response but is never set, so it is always `null`. Update it in `RequireUserToken` (or in `GetUserIDBySessionHash`), throttled to avoid a write on every request, e.g. `UPDATE user_sessions SET last_used_at = NOW() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minutes')`. Useful to spot and revoke stale devices. Otherwise drop the column.
+- [X] Write `user_sessions.last_used_at`: it exists in the schema and in the sessions response but is never set, so it is always `null`. Update it in `RequireUserToken` (or in `GetUserIDBySessionHash`), throttled to avoid a write on every request, e.g. `UPDATE user_sessions SET last_used_at = NOW() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minutes')`. Useful to spot and revoke stale devices. Otherwise drop the column.
 - [ ] Persistent session cookie (see `SCRATCHPAD.md`): `POST /users/claim` sets `__Host-bbr_session` (HttpOnly, Secure, SameSite=Lax, Max-Age 400 days) instead of returning the token in the body; `RequireUserToken` reads the bearer header, then the cookie; clear the cookie on 401; refresh it together with the throttled `last_used_at` update
 
 ## Approval flow

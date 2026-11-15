@@ -71,7 +71,7 @@ func run(logger *slog.Logger) error {
 	printerStore := database.NewPrinterStore(pool)
 	printerService := printers.NewService(printerStore)
 	printerHandler := web.NewPrintersHandler(printerService, logger)
-	userStore := database.NewUserStore(pool)
+	userStore := database.NewUserStore(pool, logger)
 	userService := users.NewService(userStore)
 	userHandler := web.NewUsersHandler(userService, logger)
 	msgStore := database.NewMessageStore(pool)

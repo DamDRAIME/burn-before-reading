@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,11 +16,12 @@ import (
 )
 
 type UserStore struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	logger *slog.Logger
 }
 
-func NewUserStore(pool *pgxpool.Pool) *UserStore {
-	return &UserStore{pool: pool}
+func NewUserStore(pool *pgxpool.Pool, logger *slog.Logger) *UserStore {
+	return &UserStore{pool: pool, logger: logger}
 }
 
 // Compile-time check to ensure UserStore implements the users.Store interface
@@ -255,6 +257,13 @@ func (s *UserStore) GetUserIDBySessionHash(ctx context.Context, hash []byte) (uu
 	}
 	if err != nil {
 		return userID, sessionID, fmt.Errorf("get user by session hash: %w", err)
+	}
+	if _, err = s.pool.Exec(
+		ctx,
+		`UPDATE user_sessions SET last_used_at = NOW() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minute')`,
+		sessionID,
+	); err != nil {
+		s.logger.Warn("failed to update session last_used_at", "session_id", sessionID, "error", err)
 	}
 	return userID, sessionID, nil
 }
