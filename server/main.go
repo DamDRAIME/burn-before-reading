@@ -68,13 +68,13 @@ func run(logger *slog.Logger) error {
 	defer pool.Close()
 
 	// Initialize message store and service
-	printerStore := database.NewPrinterStore(pool)
+	printerStore := database.NewPrinterStore(pool, logger)
 	printerService := printers.NewService(printerStore)
 	printerHandler := web.NewPrintersHandler(printerService, logger)
 	userStore := database.NewUserStore(pool, logger)
 	userService := users.NewService(userStore)
 	userHandler := web.NewUsersHandler(userService, logger)
-	msgStore := database.NewMessageStore(pool)
+	msgStore := database.NewMessageStore(pool, logger)
 	msgService := messages.NewService(msgStore, printerService, userService)
 	msgHandler := web.NewMessagesHandler(msgService, logger)
 

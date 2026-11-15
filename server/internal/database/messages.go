@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,11 +17,12 @@ import (
 )
 
 type MessageStore struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	logger *slog.Logger
 }
 
-func NewMessageStore(pool *pgxpool.Pool) *MessageStore {
-	return &MessageStore{pool: pool}
+func NewMessageStore(pool *pgxpool.Pool, logger *slog.Logger) *MessageStore {
+	return &MessageStore{pool: pool, logger: logger}
 }
 
 // Compile-time check to ensure MessageStore implements the messages.Store interface
