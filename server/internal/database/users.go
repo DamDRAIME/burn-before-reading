@@ -148,15 +148,18 @@ func (s *UserStore) List(ctx context.Context, limit int, offset int) ([]*users.U
 func (s *UserStore) SetPrinters(ctx context.Context, userID uuid.UUID, printerIDs []uuid.UUID) (*users.User, error) {
 	var u *users.User
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		// Lock the user row first: an unknown user is a 404, so a later foreign key
-		// violation can only come from an unknown printer ID in the body.
-		var exists bool
-		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 FOR UPDATE)`, userID).Scan(&exists)
+		// Lock the user row, bump last_updated_at and check the user exists: an unknown
+		// user is a 404, so a later foreign key violation can only come from an unknown printer ID.
+		err := tx.QueryRow(
+			ctx,
+			`UPDATE users SET last_updated_at = NOW() WHERE id = $1 RETURNING id`,
+			userID,
+		).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return users.ErrUserNotFound
+		}
 		if err != nil {
 			return fmt.Errorf("lock user: %w", err)
-		}
-		if !exists {
-			return users.ErrUserNotFound
 		}
 
 		_, err = tx.Exec(

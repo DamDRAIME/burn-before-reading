@@ -32,7 +32,7 @@
 - [X] Add an index column
 - [X] Add a last_updated_at column with a trigger
 - [X] Update `migrations/seed.sql` for the users tables (`sender_id` instead of `sender_name`, users, sessions, invite, user_printers)
-- [ ] `users.last_updated_at` isn't bumped when the user's printers change (`user_printers` is a separate table)
+- [X] `users.last_updated_at` isn't bumped when the user's printers change (`user_printers` is a separate table)
 
 ## Printer side
 
