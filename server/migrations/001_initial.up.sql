@@ -71,8 +71,27 @@ CREATE TABLE user_printers (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     printer_id UUID NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
 
+    role VARCHAR(20) NOT NULL DEFAULT 'member',
+
+    CONSTRAINT user_printers_role_check CHECK (
+        role IN (
+            'member',
+            'owner'
+        )
+    ),
+
     PRIMARY KEY (user_id, printer_id)
 );
+
+-- A printer can only have one owner
+CREATE UNIQUE INDEX uq_user_printers_one_owner_per_printer
+    ON user_printers (printer_id)
+    WHERE role = 'owner';
+
+-- A user can only own one printer
+CREATE UNIQUE INDEX uq_user_printers_one_printer_per_owner
+    ON user_printers (user_id)
+    WHERE role = 'owner';
 
 -- Users-Sessions Table
 

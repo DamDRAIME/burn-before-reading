@@ -95,7 +95,7 @@ func run(logger *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, userHandler, adminToken, printerService, userService, logger))
+	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, userHandler, adminToken, printerService, userService, userService, logger))
 
 	srv := &http.Server{
 		Addr:              addr,

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"bbr/internal/messages"
 	"bbr/internal/users"
 )
 
@@ -42,11 +43,11 @@ const userColumns = `
 	users.created_at,
 	users.last_updated_at,
 	ARRAY(
-		SELECT up.printer_id
+		SELECT (up.printer_id, up.role)
 		FROM user_printers up
 		WHERE up.user_id = users.id
 		ORDER BY up.printer_id
-	) AS printer_ids
+	) AS printer_accesses
 `
 
 func scanUser(row pgx.Row) (users.User, error) {
@@ -56,7 +57,7 @@ func scanUser(row pgx.Row) (users.User, error) {
 		&u.Name,
 		&u.CreatedAt,
 		&u.LastUpdatedAt,
-		&u.PrinterIDs,
+		&u.PrinterAccesses,
 	)
 	return u, err
 }
@@ -77,8 +78,8 @@ func (s *UserStore) Create(ctx context.Context, params users.CreateParams) (*use
 			return fmt.Errorf("create user: %w", err)
 		}
 
-		if len(params.PrinterIDs) > 0 {
-			if err := insertUserPrinters(ctx, tx, userID, params.PrinterIDs); err != nil {
+		if len(params.PrinterAccesses) > 0 {
+			if err := insertUserPrinters(ctx, tx, userID, params.PrinterAccesses); err != nil {
 				return err
 			}
 		}
@@ -100,6 +101,48 @@ func (s *UserStore) Create(ctx context.Context, params users.CreateParams) (*use
 	}
 
 	return &u, err
+}
+
+func (s *UserStore) RemoveMember(ctx context.Context, printerID, userID uuid.UUID) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(
+			ctx,
+			`DELETE FROM user_printers WHERE printer_id = $1 AND user_id = $2 AND role = $3`,
+			printerID,
+			userID,
+			users.RoleMember,
+		)
+		if err != nil {
+			return fmt.Errorf("remove member: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return users.ErrMemberNotFound
+		}
+
+		// If the user has no more printer memberships, revoke all their sessions and clear their invite hash and expiration.
+		err = revokeAccessIfNoPrinters(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+
+		// Reject all his pending messages to that printer.
+		_, err = tx.Exec(ctx,
+			`UPDATE messages
+			SET status = $1, moderated_at = NOW()
+			WHERE sender_id = $2
+				AND printer_id = $3
+				AND status = ANY($4)`,
+			messages.StatusRejected,
+			userID,
+			printerID,
+			[]messages.Status{messages.StatusPending, messages.StatusAwaitingApproval},
+		)
+		if err != nil {
+			return fmt.Errorf("reject messages: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func (s *UserStore) Get(ctx context.Context, id uuid.UUID) (*users.User, error) {
@@ -145,8 +188,33 @@ func (s *UserStore) List(ctx context.Context, limit int, offset int) ([]*users.U
 	return us, nil
 }
 
-func (s *UserStore) SetPrinters(ctx context.Context, userID uuid.UUID, printerIDs []uuid.UUID) (*users.User, error) {
-	var u *users.User
+func (s *UserStore) ListMembers(ctx context.Context, printerID uuid.UUID) ([]*users.User, error) {
+	rows, err := s.pool.Query(
+		ctx,
+		`SELECT `+userColumns+` FROM users
+		WHERE id IN (SELECT user_id FROM user_printers WHERE printer_id = $1 and role = $2)
+		ORDER BY created_at DESC`,
+		printerID,
+		users.RoleMember,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+	defer rows.Close()
+
+	us, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*users.User, error) {
+		u, err := scanUser(row)
+		return &u, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+
+	return us, nil
+}
+
+func (s *UserStore) SetPrinters(ctx context.Context, userID uuid.UUID, printerAccesses []users.PrinterAccess) (*users.User, error) {
+	var u users.User
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		// Lock the user row, bump last_updated_at and check the user exists: an unknown
 		// user is a 404, so a later foreign key violation can only come from an unknown printer ID.
@@ -171,10 +239,66 @@ func (s *UserStore) SetPrinters(ctx context.Context, userID uuid.UUID, printerID
 			return fmt.Errorf("delete user printers: %w", err)
 		}
 
-		if len(printerIDs) > 0 {
-			if err := insertUserPrinters(ctx, tx, userID, printerIDs); err != nil {
+		if len(printerAccesses) > 0 {
+			if err := insertUserPrinters(ctx, tx, userID, printerAccesses); err != nil {
 				return err
 			}
+		}
+
+		// If the user has no more printer memberships, revoke all their sessions and clear their invite hash and expiration.
+		err = revokeAccessIfNoPrinters(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+
+		row := tx.QueryRow(
+			ctx,
+			`SELECT `+userColumns+` FROM users WHERE id = $1`,
+			userID,
+		)
+		user, err := scanUser(row)
+		if err != nil {
+			return fmt.Errorf("get user by id: %w", err)
+		}
+		u = user
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &u, err
+}
+
+func (s *UserStore) SetOwner(ctx context.Context, userID, printerID uuid.UUID) (*users.User, error) {
+	var u *users.User
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		// Lock the user row, bump last_updated_at and check the user exists: an unknown
+		// user is a 404, so a later foreign key violation can only come from an unknown printer ID.
+		err := tx.QueryRow(
+			ctx,
+			`UPDATE users SET last_updated_at = NOW() WHERE id = $1 RETURNING id`,
+			userID,
+		).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return users.ErrUserNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("lock user: %w", err)
+		}
+
+		_, err = tx.Exec(
+			ctx,
+			`INSERT INTO user_printers (user_id, printer_id, role) VALUES ($1, $2, $3)
+			ON CONFLICT (user_id, printer_id) DO UPDATE SET role = 'owner'`,
+			userID,
+			printerID,
+			users.RoleOwner,
+		)
+		if err != nil {
+			if mappedErr := mapUserPrinterError(err); mappedErr != err {
+				return mappedErr
+			}
+			return fmt.Errorf("set owner: %w", err)
 		}
 
 		row := tx.QueryRow(
@@ -353,23 +477,93 @@ func (s *UserStore) CanSend(ctx context.Context, userID, printerID uuid.UUID) (b
 	return validPair, nil
 }
 
+func (s *UserStore) IsOwner(ctx context.Context, userID, printerID uuid.UUID) (bool, error) {
+	var isOwner bool
+	err := s.pool.QueryRow(
+		ctx,
+		`SELECT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1 AND printer_id = $2 AND role = 'owner')`,
+		userID,
+		printerID,
+	).Scan(&isOwner)
+	if err != nil {
+		return false, fmt.Errorf("is owner check: %w", err)
+	}
+	return isOwner, nil
+}
+
 // -- Helpers --
 
-// insertUserPrinters links userID to printerIDs. Duplicates are ignored;
+// insertUserPrinters links userID to printerIDs with the specified roles.
 // Callers must make sure userID exists, so a foreign key violation means an unknown printer: ErrUnknownPrinter.
-func insertUserPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID, printerIDs []uuid.UUID) error {
+func insertUserPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID, printerAccesses []users.PrinterAccess) error {
+	printerIDs, roles := printerAccessToArrays(printerAccesses)
 	_, err := tx.Exec(ctx,
-		`INSERT INTO user_printers (user_id, printer_id)
-		 SELECT $1, unnest($2::uuid[])
-		 ON CONFLICT DO NOTHING`,
-		userID, printerIDs,
+		`INSERT INTO user_printers (user_id, printer_id, role)
+		 SELECT $1, unnest($2::uuid[]), unnest($3::varchar[])`,
+		userID, printerIDs, roles,
 	)
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23503" { // foreign_key_violation
-		return users.ErrUnknownPrinter
-	}
 	if err != nil {
+		if mappedErr := mapUserPrinterError(err); mappedErr != err {
+			return mappedErr
+		}
 		return fmt.Errorf("insert user printers: %w", err)
+	}
+	return nil
+}
+
+func printerAccessToArrays(printerAccesses []users.PrinterAccess) ([]uuid.UUID, []string) {
+	printerIDs := make([]uuid.UUID, len(printerAccesses))
+	roles := make([]string, len(printerAccesses))
+	for i, pa := range printerAccesses {
+		printerIDs[i] = pa.PrinterID
+		roles[i] = string(pa.Role)
+	}
+	return printerIDs, roles
+}
+
+// mapUserPrinterError translates user_printers constraint violations into domain errors.
+func mapUserPrinterError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch {
+		case pgErr.Code == "23503": // foreign_key_violation
+			return users.ErrUnknownPrinter
+		case pgErr.ConstraintName == "uq_user_printers_one_owner_per_printer",
+			pgErr.ConstraintName == "uq_user_printers_one_printer_per_owner":
+			return users.ErrPrinterOwnershipViolation
+		case pgErr.ConstraintName == "user_printers_pkey":
+			return users.ErrConflictingRoles
+		}
+	}
+	return err
+}
+
+func revokeAccessIfNoPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
+	// If the user has no more printer memberships, revoke all their sessions.
+	_, err := tx.Exec(
+		ctx,
+		`UPDATE user_sessions
+		SET revoked_at = NOW()
+		WHERE revoked_at IS NULL
+			AND user_id = $1
+			AND NOT EXISTS(SELECT 1 FROM user_printers WHERE user_id = $1)`,
+		userID,
+	)
+	if err != nil {
+		return fmt.Errorf("revoke sessions: %w", err)
+	}
+
+	// If the user has no more printer memberships, clear their invite hash and expiration.
+	_, err = tx.Exec(ctx,
+		`UPDATE users
+		SET invite_hash = NULL, invite_expires_at = NULL
+		WHERE id = $1
+		AND invite_hash IS NOT NULL
+		AND NOT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1)`,
+		userID,
+	)
+	if err != nil {
+		return fmt.Errorf("clear invite: %w", err)
 	}
 	return nil
 }

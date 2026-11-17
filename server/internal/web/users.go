@@ -36,6 +36,7 @@ func (h *UsersHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Get("/users", h.list)
 	r.Get("/users/{id}", h.get)
 	r.Put("/users/{id}/printers", h.setPrinters)
+	r.Put("/users/{id}/printers/{printerID}/owner", h.setOwner)
 	r.Post("/users/{id}/invite", h.reissueInvite)
 	r.Get("/users/{id}/sessions", h.listSessions)
 	r.Delete("/users/{id}/sessions", h.revokeAllSessions)
@@ -47,6 +48,13 @@ func (h *UsersHandler) RegisterUserRoutes(r chi.Router) {
 	r.Get("/me", h.me)
 }
 
+// RegisterPrinterOwnerRoutes registers routes mounted under /user/printers/{id} (behind RequirePrinterOwner).
+func (h *UsersHandler) RegisterPrinterOwnerRoutes(r chi.Router) {
+	r.Get("/members", h.listMembers)
+	r.Post("/members", h.addMember)
+	r.Delete("/members/{userID}", h.removeMember)
+}
+
 // -- Requests ----
 
 type userCreateRequest struct {
@@ -54,9 +62,14 @@ type userCreateRequest struct {
 	PrinterIDs []uuid.UUID `json:"printer_ids"`
 }
 
+type printerAccessRequest struct {
+	PrinterID uuid.UUID  `json:"printer_id"`
+	Role      users.Role `json:"role"`
+}
+
 type userSetPrintersRequest struct {
 	// Pointer so a missing field (nil) can be told apart from an explicit [] (remove all access).
-	PrinterIDs *[]uuid.UUID `json:"printer_ids"`
+	PrinterAccesses *[]printerAccessRequest `json:"printer_accesses"`
 }
 
 type userClaimRequest struct {
@@ -64,14 +77,23 @@ type userClaimRequest struct {
 	DeviceName string `json:"device_name"`
 }
 
+type userAddMemberRequest struct {
+	Name string `json:"name"`
+}
+
 // -- Responses ----
 
+type printerAccessResponse struct {
+	PrinterID uuid.UUID  `json:"printer_id"`
+	Role      users.Role `json:"role"`
+}
+
 type userAdminResponse struct {
-	ID            uuid.UUID   `json:"id"`
-	Name          string      `json:"name"`
-	PrinterIDs    []uuid.UUID `json:"printer_ids"`
-	CreatedAt     time.Time   `json:"created_at"`
-	LastUpdatedAt time.Time   `json:"last_updated_at"`
+	ID              uuid.UUID               `json:"id"`
+	Name            string                  `json:"name"`
+	PrinterAccesses []printerAccessResponse `json:"printer_accesses"`
+	CreatedAt       time.Time               `json:"created_at"`
+	LastUpdatedAt   time.Time               `json:"last_updated_at"`
 }
 
 type userCreateResponse struct {
@@ -80,9 +102,20 @@ type userCreateResponse struct {
 }
 
 type userMeResponse struct {
-	ID         uuid.UUID   `json:"id"`
-	Name       string      `json:"name"`
-	PrinterIDs []uuid.UUID `json:"printer_ids"`
+	ID              uuid.UUID               `json:"id"`
+	Name            string                  `json:"name"`
+	PrinterAccesses []printerAccessResponse `json:"printer_accesses"`
+}
+
+type userMemberResponse struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+	Role string    `json:"role"`
+}
+
+type userAddMemberResponse struct {
+	userMemberResponse
+	Invite string `json:"invite"`
 }
 
 type sessionResponse struct {
@@ -131,14 +164,8 @@ func (h *UsersHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSONResponse(w, http.StatusCreated, userCreateResponse{
-		userAdminResponse: userAdminResponse{
-			ID:            user.ID,
-			Name:          user.Name,
-			PrinterIDs:    user.PrinterIDs,
-			CreatedAt:     user.CreatedAt,
-			LastUpdatedAt: user.LastUpdatedAt,
-		},
-		Invite: invite,
+		userAdminResponse: toUserAdminResponse(user),
+		Invite:            invite,
 	})
 }
 
@@ -152,13 +179,7 @@ func (h *UsersHandler) get(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
-	writeJSONResponse(w, http.StatusOK, userAdminResponse{
-		ID:            user.ID,
-		Name:          user.Name,
-		PrinterIDs:    user.PrinterIDs,
-		CreatedAt:     user.CreatedAt,
-		LastUpdatedAt: user.LastUpdatedAt,
-	})
+	writeJSONResponse(w, http.StatusOK, toUserAdminResponse(user))
 }
 
 func (h *UsersHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -188,11 +209,32 @@ func (h *UsersHandler) setPrinters(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.PrinterIDs == nil {
-		writeErrorResponse(w, http.StatusBadRequest, "printer_ids is required (use [] to remove all printers)")
+	if req.PrinterAccesses == nil {
+		writeErrorResponse(w, http.StatusBadRequest, "printer_accesses is required (use [] to remove all printers)")
 		return
 	}
-	user, err := h.service.SetPrinters(r.Context(), id, *req.PrinterIDs)
+	accesses := make([]users.PrinterAccess, len(*req.PrinterAccesses))
+	for i, pa := range *req.PrinterAccesses {
+		accesses[i] = users.PrinterAccess{PrinterID: pa.PrinterID, Role: pa.Role}
+	}
+	user, err := h.service.SetPrinters(r.Context(), id, accesses)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSONResponse(w, http.StatusOK, toUserAdminResponse(user))
+}
+
+func (h *UsersHandler) setOwner(w http.ResponseWriter, r *http.Request) {
+	userID, ok := parseUUIDParam(w, r, "id", "invalid user ID")
+	if !ok {
+		return
+	}
+	printerID, ok := parseUUIDParam(w, r, "printerID", "invalid printer ID")
+	if !ok {
+		return
+	}
+	user, err := h.service.SetOwner(r.Context(), userID, printerID)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -274,23 +316,95 @@ func (h *UsersHandler) me(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, http.StatusOK, toUserMeResponse(user))
 }
 
+// -- Owner handlers ----
+
+func (h *UsersHandler) listMembers(w http.ResponseWriter, r *http.Request) {
+	printerID, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	if !ok {
+		return
+	}
+	members, err := h.service.ListMembers(r.Context(), printerID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	responses := make([]userMemberResponse, len(members))
+	for i, member := range members {
+		responses[i] = toUserMemberResponse(member)
+	}
+	writeJSONResponse(w, http.StatusOK, responses)
+}
+
+func (h *UsersHandler) addMember(w http.ResponseWriter, r *http.Request) {
+	printerID, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	if !ok {
+		return
+	}
+	var req userAddMemberRequest
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	member, invite, err := h.service.AddMember(r.Context(), printerID, req.Name)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSONResponse(w, http.StatusCreated, userAddMemberResponse{
+		userMemberResponse: toUserMemberResponse(member),
+		Invite:             invite,
+	})
+}
+
+func (h *UsersHandler) removeMember(w http.ResponseWriter, r *http.Request) {
+	printerID, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+	if !ok {
+		return
+	}
+	userID, ok := parseUUIDParam(w, r, "userID", "invalid user ID")
+	if !ok {
+		return
+	}
+
+	err := h.service.RemoveMember(r.Context(), printerID, userID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // -- Mappers ----
+
+func toPrinterAccessResponse(pa users.PrinterAccess) printerAccessResponse {
+	return printerAccessResponse{PrinterID: pa.PrinterID, Role: pa.Role}
+}
 
 func toUserAdminResponse(u *users.User) userAdminResponse {
 	return userAdminResponse{
-		ID:            u.ID,
-		Name:          u.Name,
-		PrinterIDs:    u.PrinterIDs,
-		CreatedAt:     u.CreatedAt,
-		LastUpdatedAt: u.LastUpdatedAt,
+		ID:              u.ID,
+		Name:            u.Name,
+		PrinterAccesses: mapSlice(u.PrinterAccesses, toPrinterAccessResponse),
+		CreatedAt:       u.CreatedAt,
+		LastUpdatedAt:   u.LastUpdatedAt,
 	}
 }
 
 func toUserMeResponse(u *users.User) userMeResponse {
 	return userMeResponse{
-		ID:         u.ID,
-		Name:       u.Name,
-		PrinterIDs: u.PrinterIDs,
+		ID:              u.ID,
+		Name:            u.Name,
+		PrinterAccesses: mapSlice(u.PrinterAccesses, toPrinterAccessResponse),
+	}
+}
+
+func toUserMemberResponse(u *users.User) userMemberResponse {
+	return userMemberResponse{
+		ID:   u.ID,
+		Name: u.Name,
+		Role: string(users.RoleMember),
 	}
 }
 
@@ -311,6 +425,7 @@ func (h *UsersHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, users.ErrInvalidInvite):
 		writeErrorResponse(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, users.ErrUserNotFound),
+		errors.Is(err, users.ErrMemberNotFound),
 		errors.Is(err, users.ErrSessionNotFound),
 		errors.Is(err, printers.ErrNotFound):
 		writeErrorResponse(w, http.StatusNotFound, err.Error())
@@ -319,8 +434,12 @@ func (h *UsersHandler) handleError(w http.ResponseWriter, err error) {
 		errors.Is(err, users.ErrUserNameTooLong),
 		errors.Is(err, users.ErrEmptyDeviceName),
 		errors.Is(err, users.ErrDeviceNameTooLong),
+		errors.Is(err, users.ErrInvalidRole),
+		errors.Is(err, users.ErrConflictingRoles),
 		errors.Is(err, validate.ErrInvalidCharacters):
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, users.ErrPrinterOwnershipViolation):
+		writeErrorResponse(w, http.StatusConflict, err.Error())
 	default:
 		h.logger.Error("internal server error", "error", err)
 		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
