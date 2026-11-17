@@ -6,12 +6,28 @@ import (
 	"github.com/google/uuid"
 )
 
+type Role string
+
+const (
+	RoleMember Role = "member"
+	RoleOwner  Role = "owner"
+)
+
+func (r Role) IsValid() bool {
+	return r == RoleMember || r == RoleOwner
+}
+
+type PrinterAccess struct {
+	PrinterID uuid.UUID
+	Role Role
+}
+
 type User struct {
 	ID uuid.UUID
 
 	Name string
 
-	PrinterIDs []uuid.UUID
+	PrinterAccesses []PrinterAccess
 
 	CreatedAt     time.Time
 	LastUpdatedAt time.Time

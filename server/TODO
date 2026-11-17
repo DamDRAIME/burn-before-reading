@@ -15,6 +15,18 @@
 - [X] Write `user_sessions.last_used_at`: it exists in the schema and in the sessions response but is never set, so it is always `null`. Update it in `RequireUserToken` (or in `GetUserIDBySessionHash`), throttled to avoid a write on every request, e.g. `UPDATE user_sessions SET last_used_at = NOW() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minutes')`. Useful to spot and revoke stale devices. Otherwise drop the column.
 - [ ] Persistent session cookie (see `SCRATCHPAD.md`): `POST /users/claim` sets `__Host-bbr_session` (HttpOnly, Secure, SameSite=Lax, Max-Age 400 days) instead of returning the token in the body; `RequireUserToken` reads the bearer header, then the cookie; clear the cookie on 401; refresh it together with the throttled `last_used_at` update
 
+## Printer ownership
+
+- [X] `user_printers.role` (`member` / `owner`), with partial unique indexes: one owner per printer, one owned printer per user
+- [X] Owner routes under `/user/printers/{id}` behind `RequirePrinterOwner`: quiet hours (set/clear), list/invite/remove members
+- [X] Admin: `PUT /admin/users/{id}/printers` takes `printer_accesses` with roles; `PUT /admin/users/{id}/printers/{printerID}/owner` upserts (promotes an existing member)
+- [X] Map ownership constraint violations to 409 and unknown printers to 400 (`mapUserPrinterError`)
+- [X] Removing a user's last printer revokes their sessions and clears their invite (`revokeAccessIfNoPrinters`, used by `RemoveMember` and `SetPrinters`)
+- [X] Removing a member rejects their `pending` / `awaiting_approval` messages to that printer
+- [ ] `SetPrinters` doesn't reject queued messages for the printers it removes (`RemoveMember` does)
+- [ ] Let users add their own devices: `POST /user/invite` (own session token) returns a fresh invite for the caller, to claim on another device (e.g. as a QR code). Reuse `users.Service.ReissueInvite` with the user ID from the session; send `Cache-Control: no-store`. Existing sessions are kept
+- [ ] Ownership transfer takes two admin calls (demote with `SetPrinters`, then `SetOwner`); consider a single transfer route, and a way to remove an owner without rewriting all of their links
+
 ## Approval flow
 
 - [X] SubmitMessage: set initial status (pending / awaiting_approval) based on source instead of always pending
@@ -33,6 +45,7 @@
 - [X] Add a last_updated_at column with a trigger
 - [X] Update `migrations/seed.sql` for the users tables (`sender_id` instead of `sender_name`, users, sessions, invite, user_printers)
 - [X] `users.last_updated_at` isn't bumped when the user's printers change (`user_printers` is a separate table)
+- [X] Fix `migrations/seed.sql` syntax (stray `;` inside multi-row INSERTs) and add owners, printer Marc and user Heidi
 
 ## Printer side
 
@@ -47,7 +60,7 @@
 - [ ] ... also during quiet hours: `ClaimOldest` returns `ErrInQuietHours` before the query that sets `last_heartbeat_at`, so a printer that only polls claims shows offline all night
 - [ ] Reset `processed_at` (and `printed_at`) when a message is claimed again after a retry; today it keeps the previous attempt's `processed_at`, earlier than the new `claimed_at`
 - [ ] Decide whether a printer may hold several claims at once (today it can claim again before finishing the previous message)
-- [ ] `DELETE /admin/printers/{id}/quiet_hours` also sets `timezone` to NULL, while create always stores the default timezone
+- [ ] `DELETE /admin/printers/{id}/quiet_hours` (and the owner route) also sets `timezone` to NULL, while create always stores the default timezone
 
 ## Security hardening
 

@@ -16,34 +16,46 @@ TRUNCATE messages, user_sessions, user_printers, users, printers RESTART IDENTIT
 -- token_hash is sha256('bbr_printer_dev_<name>')
 
 INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezone, error, created_at, last_heartbeat_at, token_hash) VALUES
-    ('11111111-1111-1111-1111-111111111111', 'Epson TM-T20III', 'Alice', NULL,    NULL,    'Europe/Brussels', NULL,        NOW() - INTERVAL '30 days', NOW() - INTERVAL '10 seconds', sha256('bbr_printer_dev_alice')),
-    ('22222222-2222-2222-2222-222222222222', 'Epson TM-T20III', 'Bob',   '22:00', '07:00', 'Europe/Brussels', NULL,        NOW() - INTERVAL '20 days', NOW() - INTERVAL '8 hours',    sha256('bbr_printer_dev_bob')),
-    ('33333333-3333-3333-3333-333333333333', 'Star TSP143',     'Carol', '12:00', '13:00', 'Europe/Brussels', 'paper jam', NOW() - INTERVAL '60 days', NOW() - INTERVAL '14 days',    sha256('bbr_printer_dev_carol'));
+    ('11111111-1111-1111-1111-111111111111', 'Epson TM-T20III', 'Alice and Dave', NULL,    NULL,   'Europe/Brussels', NULL,        NOW() - INTERVAL '30 days', NOW() - INTERVAL '10 seconds', sha256('bbr_printer_dev_alice')),
+    ('22222222-2222-2222-2222-222222222222', 'Epson TM-T20III', 'Eve Office',           '22:00', '07:00', 'Europe/Brussels', NULL,        NOW() - INTERVAL '20 days', NOW() - INTERVAL '8 hours',    sha256('bbr_printer_dev_bob')),
+    ('33333333-3333-3333-3333-333333333333', 'Star TSP143',     'Frank',         '12:00', '13:00', 'Europe/Brussels', 'paper jam', NOW() - INTERVAL '60 days', NOW() - INTERVAL '14 days',    sha256('bbr_printer_dev_carol')),
+    ('44444444-4444-4444-4444-444444444444', 'Rongta RT-20',    'Marc',          '12:00', '13:00', 'Europe/Brussels', NULL,        NOW() - INTERVAL '60 days', NOW() - INTERVAL '14 days',    sha256('bbr_printer_dev_marc'));
 
 -- -- Users ----------------------------------------------------
---   Dave:  active session, may send to Alice
---   Eve:   active session, may send to Alice and Bob
---   Frank: one revoked session, may send to Carol
---   Grace: invited, invite not claimed yet (claim it with bbr_invite_dev_grace), may send to Alice
+--   Dave:  active session, may send to his printer and Marc's printer
+--   Eve:   active session, may send to her printer, Alice/Dave's, and Marc's printer
+--   Frank: one revoked session, may send to his printer and Marc's printer
+--   Grace: invited, invite not claimed yet (claim it with bbr_invite_dev_grace), may send to Alice/Dave's printer
+--   Marc:   active session, may send to his printer only
+--   Heidi: active session, member of Alice/Dave's printer only (removing her revokes her sessions)
 
 INSERT INTO users (id, name, invite_hash, invite_expires_at, created_at) VALUES
-    ('aaaaaaaa-0000-0000-0000-000000000001', 'Dave',  NULL,                            NULL,                     NOW() - INTERVAL '25 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000002', 'Eve',   NULL,                            NULL,                     NOW() - INTERVAL '15 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000003', 'Frank', NULL,                            NULL,                     NOW() - INTERVAL '40 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000004', 'Grace', sha256('bbr_invite_dev_grace'), NOW() + INTERVAL '2 days', NOW() - INTERVAL '1 hour');
+    ('aaaaaaaa-0000-0000-0000-000000000001', 'Dave',  NULL,                            NULL,                      NOW() - INTERVAL '25 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', 'Eve',   NULL,                            NULL,                      NOW() - INTERVAL '15 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000003', 'Frank', NULL,                            NULL,                      NOW() - INTERVAL '40 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000004', 'Grace', sha256('bbr_invite_dev_grace'),  NOW() + INTERVAL '2 days', NOW() - INTERVAL '1 hour'),
+    ('aaaaaaaa-0000-0000-0000-000000000005', 'Marc',  NULL,                            NULL,                      NOW() - INTERVAL '1 hour'),
+    ('aaaaaaaa-0000-0000-0000-000000000006', 'Heidi', NULL,                            NULL,                      NOW() - INTERVAL '2 hours');
 
-INSERT INTO user_printers (user_id, printer_id) VALUES
-    ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111'),
-    ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111'),
-    ('aaaaaaaa-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222'),
-    ('aaaaaaaa-0000-0000-0000-000000000003', '33333333-3333-3333-3333-333333333333'),
-    ('aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111');
+INSERT INTO user_printers (user_id, printer_id, role) VALUES
+    ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'owner'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'member'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'owner'),
+    ('aaaaaaaa-0000-0000-0000-000000000003', '33333333-3333-3333-3333-333333333333', 'owner'),
+    ('aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'member'),
+    ('aaaaaaaa-0000-0000-0000-000000000005', '44444444-4444-4444-4444-444444444444', 'owner'),
+    ('aaaaaaaa-0000-0000-0000-000000000001', '44444444-4444-4444-4444-444444444444', 'member'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', '44444444-4444-4444-4444-444444444444', 'member'),
+    ('aaaaaaaa-0000-0000-0000-000000000003', '44444444-4444-4444-4444-444444444444', 'member'),
+    ('aaaaaaaa-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'member');
 
 -- token_hash is sha256('bbr_user_dev_<name>')
 INSERT INTO user_sessions (id, user_id, device_name, token_hash, created_at, revoked_at) VALUES
-    ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'Dave''s phone', sha256('bbr_user_dev_dave'),  NOW() - INTERVAL '25 days', NULL),
-    ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002', 'Eve''s laptop', sha256('bbr_user_dev_eve'),   NOW() - INTERVAL '15 days', NULL),
-    ('cccccccc-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000003', 'Old tablet',    sha256('bbr_user_dev_frank'), NOW() - INTERVAL '40 days', NOW() - INTERVAL '10 days');
+    ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'Dave''s phone',   sha256('bbr_user_dev_dave'),  NOW() - INTERVAL '25 days', NULL),
+    ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002', 'Eve''s laptop',   sha256('bbr_user_dev_eve'),   NOW() - INTERVAL '15 days', NULL),
+    ('cccccccc-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000003', 'Old tablet',      sha256('bbr_user_dev_frank'), NOW() - INTERVAL '40 days', NOW() - INTERVAL '10 days'),
+    ('cccccccc-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005', 'Marc''s desktop', sha256('bbr_user_dev_marc'),  NOW() - INTERVAL '1 hour',  NULL),
+    ('cccccccc-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-000000000006', 'Heidi''s phone',  sha256('bbr_user_dev_heidi'), NOW() - INTERVAL '2 hours', NULL);
 
 -- -- Messages -------------------------------------------------
 -- sender_id is NULL for admin messages; the API derives sender_name from users.name.

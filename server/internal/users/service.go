@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -19,12 +20,18 @@ var (
 	ErrEmptyDeviceName   = errors.New("device name cannot be empty")
 	ErrDeviceNameTooLong = errors.New("device name exceeds maximum length")
 
+	ErrInvalidRole = errors.New("invalid role")
+
 	ErrInvalidToken  = errors.New("invalid user token")
 	ErrInvalidInvite = errors.New("invalid invite token")
 
+	ErrPrinterOwnershipViolation = errors.New("user already owns a printer or the printer is already owned by another user")
+	ErrConflictingRoles          = errors.New("conflicting roles for the same printer")
+
 	ErrUserNotFound    = errors.New("user not found")
+	ErrMemberNotFound  = errors.New("member not found")
 	ErrSessionNotFound = errors.New("session not found")
-	ErrUnknownPrinter  = errors.New("unknown printer ID in printer_ids")
+	ErrUnknownPrinter  = errors.New("unknown printer ID")
 )
 
 const (
@@ -56,9 +63,22 @@ func (s *Service) Create(ctx context.Context, params SubmitParams) (*User, strin
 
 	inviteToken, hash := token.Generate(token.InvitePrefix)
 
+	// Set role to Member and remove duplicates
+	printerAccesses := make([]PrinterAccess, len(params.PrinterIDs))
+	for i, printerID := range params.PrinterIDs {
+		printerAccesses[i] = PrinterAccess{
+			PrinterID: printerID,
+			Role:      RoleMember, // default role for new users
+		}
+	}
+	dedupedPrinterAccesses, err := deconflictPrinterAccesses(printerAccesses)
+	if err != nil {
+		return nil, "", err
+	}
+
 	userParams := CreateParams{
 		Name:            name,
-		PrinterIDs:      params.PrinterIDs,
+		PrinterAccesses: dedupedPrinterAccesses,
 		InviteHash:      hash,
 		InviteExpiresAt: time.Now().Add(InviteExpiryTimeout),
 	}
@@ -69,6 +89,39 @@ func (s *Service) Create(ctx context.Context, params SubmitParams) (*User, strin
 	}
 
 	return user, inviteToken, nil
+}
+
+func (s *Service) AddMember(ctx context.Context, printerID uuid.UUID, name string) (*User, string, error) {
+	name, err := validate.RequiredString(name, MaxUserNameLength, ErrEmptyUserName, ErrUserNameTooLong, false)
+	if err != nil {
+		return nil, "", err
+	}
+
+	inviteToken, hash := token.Generate(token.InvitePrefix)
+
+	userParams := CreateParams{
+		Name: name,
+		PrinterAccesses: []PrinterAccess{
+			{
+				PrinterID: printerID,
+				Role:      RoleMember,
+			},
+		},
+		InviteHash:      hash,
+		InviteExpiresAt: time.Now().Add(InviteExpiryTimeout),
+	}
+
+	user, err := s.store.Create(ctx, userParams)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Return the list of members for the printer after adding the new member.
+	return user, inviteToken, nil
+}
+
+func (s *Service) RemoveMember(ctx context.Context, printerID, userID uuid.UUID) error {
+	return s.store.RemoveMember(ctx, printerID, userID)
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*User, error) {
@@ -85,13 +138,33 @@ func (s *Service) List(ctx context.Context, limit, offset int) ([]*User, error) 
 	return s.store.List(ctx, limit, offset)
 }
 
+func (s *Service) ListMembers(ctx context.Context, printerID uuid.UUID) ([]*User, error) {
+	return s.store.ListMembers(ctx, printerID)
+}
+
 func (s *Service) ListSessions(ctx context.Context, userID uuid.UUID) ([]*Session, error) {
 	return s.store.ListSessions(ctx, userID)
 }
 
-func (s *Service) SetPrinters(ctx context.Context, userID uuid.UUID, printerIDs []uuid.UUID) (*User, error) {
-	// If printerIDs is empty then it is similar to removing all printers accesses
-	return s.store.SetPrinters(ctx, userID, printerIDs)
+func (s *Service) SetPrinters(ctx context.Context, userID uuid.UUID, printerAccesses []PrinterAccess) (*User, error) {
+	for _, pa := range printerAccesses {
+		if !pa.Role.IsValid() {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidRole, pa.Role)
+		}
+	}
+
+	// Remove duplicates and conflicts to avoid unique constraint violations in the database.
+	dedupedPrinterAccesses, err := deconflictPrinterAccesses(printerAccesses)
+	if err != nil {
+		return nil, err
+	}
+
+	// Empty printerAccesses removes all printer accesses
+	return s.store.SetPrinters(ctx, userID, dedupedPrinterAccesses)
+}
+
+func (s *Service) SetOwner(ctx context.Context, userID, printerID uuid.UUID) (*User, error) {
+	return s.store.SetOwner(ctx, userID, printerID)
 }
 
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
@@ -104,6 +177,10 @@ func (s *Service) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error
 
 func (s *Service) CanSend(ctx context.Context, userID, printerID uuid.UUID) (bool, error) {
 	return s.store.CanSend(ctx, userID, printerID)
+}
+
+func (s *Service) IsOwner(ctx context.Context, userID, printerID uuid.UUID) (bool, error) {
+	return s.store.IsOwner(ctx, userID, printerID)
 }
 
 // -- Authentication and Token Management --
