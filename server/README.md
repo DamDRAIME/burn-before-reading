@@ -6,7 +6,7 @@
 ## High-level overview
 Here are the main steps involved in submitting, processing, and, finally, printing a message:
 
-1. An admin creates a user account and links it to the printers that user may send to. The API returns a one-time **invite**.
+1. An admin creates a user account and links it to the printers that user may send to. The owner of a printer can also invite new users to it. The API returns a one-time **invite**.
 2. The user claims the invite from their device and receives a **session token**.
 3. The user submits a message to one of their allowed recipients. The API stores it with the status `awaiting_approval`. _(Messages sent by an admin skip moderation and start as `pending`)_
 4. A moderator approves or rejects the message.
@@ -23,6 +23,7 @@ Every protected route expects an `Authorization: Bearer <token>` header. The tok
 | Admin | `/api/v1/admin` | the `ADMIN_TOKEN` environment variable | server configuration (placeholder until real admin accounts exist) |
 | Printer | `/api/v1/printer` | `bbr_printer_…` | `POST /admin/printers` or `POST /admin/printers/{id}/rotate_token` |
 | User | `/api/v1/user` | `bbr_user_…` | `POST /users/claim`, in exchange for a `bbr_invite_…` invite |
+| Printer owner | `/api/v1/user/printers/{id}/…` | `bbr_user_…` of the user who owns printer `{id}` | an admin makes the user the owner of that printer |
 | Public | `/api/v1/users/claim`, `/health` | none | |
 
 - Printer, user and invite tokens are only ever stored as `sha256(token)`. Someone who gets a copy of the database can't use it to call the API.
@@ -40,6 +41,23 @@ Every protected route expects an `Authorization: Bearer <token>` header. The tok
 - **Claim:** the user's device sends the invite to `POST /api/v1/users/claim` with a `device_name`. The response holds a `bbr_user_…` session token. An unknown, expired or already used invite gets `401`.
 - **Sessions:** a user can have several sessions, one per device. An admin can list them and revoke one or all of them. A revoked session token gets `401`. Each session's `last_used_at` is updated when its token authenticates a request, at most once every 5 minutes, which helps spot stale devices to revoke.
 - **Printer access:** a user may only send to the printers they are linked to (`user_printers`). Sending to any other printer gets `404 printer not found`, so other printers' existence isn't revealed. `GET /api/v1/user/printers` lists the allowed ones.
+
+### Printer owners
+Each link between a user and a printer has a **role**, `member` or `owner`. Both may send to the printer. An owner can also manage it, along with the admin:
+
+- change or clear its quiet hours;
+- list its members, invite new members (this creates a new user and returns their invite) and remove members.
+
+Rules:
+
+- **One owner per printer, one owned printer per user.** Two partial unique indexes on `user_printers` enforce this. A user can still be a member of other printers while owning one.
+- **Only the admin assigns owners:** `PUT /admin/users/{id}/printers/{printerID}/owner`. If the user is already a member of that printer, they are promoted. If the printer already has an owner, or the user already owns another printer, the API answers `409`. To transfer a printer, first demote the current owner with `PUT /admin/users/{id}/printers`, then set the new owner.
+- **Owner routes are checked per printer.** Calling them on a printer you don't own (unknown, someone else's, or one you're only a member of) gets `403`. Losing ownership takes effect on the next request.
+- **Owners can't remove themselves or another owner.** Only members can be removed. An unknown user, or one who isn't a member of this printer, gets `404`.
+- **Removing a member** (by the owner, or by the admin through `PUT /admin/users/{id}/printers`):
+  - If the user has no printer left, their sessions are revoked and their unclaimed invite stops working. A user who still has another printer keeps both.
+  - When an owner removes a member, that member's `pending` and `awaiting_approval` messages to the printer are rejected, so nothing they sent is printed after removal. The admin route doesn't do this yet (see `TODO`).
+  - The user account itself is kept, together with its message history.
 
 ## Database
 
@@ -71,6 +89,7 @@ erDiagram
     user_printers {
         UUID user_id PK, FK "ON DELETE CASCADE"
         UUID printer_id PK, FK "ON DELETE CASCADE"
+        VARCHAR role "member (default) or owner"
     }
     printers {
         UUID id PK
@@ -105,7 +124,17 @@ erDiagram
     }
 ```
 
-Indexes worth knowing about: `idx_messages_pending (printer_id, created_at) WHERE status = 'pending'` serves the claim query, and `idx_messages_sender (sender_id, sequence_number)` serves a user's message list.
+Indexes worth knowing about:
+
+- `idx_messages_pending (printer_id, created_at) WHERE status = 'pending'` serves the claim query.
+- `idx_messages_sender (sender_id, sequence_number)` serves a user's message list.
+- `uq_user_printers_one_owner_per_printer (printer_id) WHERE role = 'owner'` and `uq_user_printers_one_printer_per_owner (user_id) WHERE role = 'owner'` enforce the [ownership rules](#printer-owners).
+
+### What changed with printer ownership
+- **New column:** `user_printers.role`, `member` by default. Existing links became members.
+- **`PUT /admin/users/{id}/printers` takes roles.** The body changed from `{"printer_ids": [...]}` to `{"printer_accesses": [{"printer_id", "role"}]}`.
+- **User responses changed:** `printer_ids` was replaced by `printer_accesses: [{printer_id, role}]` in admin user responses and in `GET /user/me`.
+- **New routes:** `PUT /admin/users/{id}/printers/{printerID}/owner`, and the [owner routes](#owner-routes) under `/user/printers/{id}`.
 
 ### What changed with the users table
 User accounts replaced the anonymous, free-text sender:
@@ -193,7 +222,8 @@ direction LR
 [*] --> awaiting_approval : submitted by a user
 [*] --> pending : submitted by an admin
 awaiting_approval --> pending : admin approves<br/>(moderated_at)
-awaiting_approval --> rejected : admin rejects<br/>(moderated_at)
+awaiting_approval --> rejected : admin rejects, or sender removed<br/>from the printer (moderated_at)
+pending --> rejected : sender removed<br/>from the printer (moderated_at)
 pending --> claimed : printer claims oldest job<br/>(claimed_at, attempts+1)
 claimed --> processed : printer has rendered it<br/>(processed_at)
 processed --> printed : success (printed_at)
@@ -222,8 +252,9 @@ All request and response bodies are JSON. Errors always have the shape `{"error"
 | `204` | Success with no body (heartbeat, session revocation, empty claim queue or quiet hours) |
 | `400` | Invalid body, path ID, query parameter or field value, including an unknown printer ID inside a request body |
 | `401` | Missing or invalid token, or an invalid invite |
-| `404` | The resource in the URL doesn't exist or isn't visible to the caller (another printer's message, another user's message, a printer the user may not send to) |
-| `409` | The message's current status doesn't allow this transition |
+| `403` | Valid user token, but the caller doesn't own the printer in the URL ([owner routes](#owner-routes)) |
+| `404` | The resource in the URL doesn't exist or isn't visible to the caller (another printer's message, another user's message, a printer the user may not send to, a user who isn't a member of the owner's printer) |
+| `409` | The message's current status doesn't allow this transition, or an ownership rule would be broken (printer already owned, user already owns a printer) |
 | `500` | Unexpected server error |
 
 ### List query parameters
@@ -289,13 +320,14 @@ Quiet hours are `"HH:MM"` strings and may cross midnight (`"22:00"` to `"07:00"`
 | `POST` | `/users` | `{"name", "printer_ids"?}` | `201 user` with `invite` |
 | `GET` | `/users` | | `200 [user]` |
 | `GET` | `/users/{id}` | | `200 user` |
-| `PUT` | `/users/{id}/printers` | `{"printer_ids"}` (required; `[]` removes all access) | `200 user` |
+| `PUT` | `/users/{id}/printers` | `{"printer_accesses": [{"printer_id", "role"}]}` (required; replaces all links; `[]` removes all access) | `200 user` |
+| `PUT` | `/users/{id}/printers/{printerID}/owner` | | `200 user`; makes the user the printer's owner (promotes them if already a member) |
 | `POST` | `/users/{id}/invite` | | `200 {"invite"}` |
 | `GET` | `/users/{id}/sessions` | | `200 [session]`, newest first |
 | `DELETE` | `/users/{id}/sessions` | | `204`, revokes every active session |
 | `DELETE` | `/users/{id}/sessions/{sessionID}` | | `204` (repeating it is harmless) |
 
-An unknown user in the URL gets `404`. An unknown printer in `printer_ids` gets `400`, and nothing is changed.
+An unknown user in the URL gets `404`. An unknown printer in `printer_ids`, `printer_accesses` or the URL of the owner route gets `400`, and nothing is changed. In `printer_accesses`, `role` must be `member` or `owner`, and listing the same printer twice with different roles gets `400`. Users created with `POST /users` are always members. Use the owner route, or `printer_accesses`, to make someone an owner. A user who is left with no printer loses their sessions and invite (see [Printer owners](#printer-owners)).
 
 ### Printer routes
 All prefixed with `/api/v1/printer`, with the printer's token.
@@ -313,11 +345,24 @@ All prefixed with `/api/v1/user`, with the user's session token.
 
 | Method | Route | Body | Response |
 |---|---|---|---|
-| `GET` | `/me` | | `200 {id, name, printer_ids}` |
+| `GET` | `/me` | | `200 {id, name, printer_accesses: [{printer_id, role}]}` |
 | `GET` | `/printers` | | `200 [printer]`, the printers this user may send to |
 | `GET` | `/messages` | | `200 [message]`, only the caller's, with [list parameters](#list-query-parameters) |
 | `POST` | `/messages` | `{"printer_id", "content"}` | `201 message`, status `awaiting_approval` |
 | `GET` | `/messages/{id}` | | `200 message`, `404` if it isn't the caller's |
+
+### Owner routes
+All prefixed with `/api/v1/user/printers/{id}`, with the session token of the user who owns printer `{id}`. Anyone else gets `403`.
+
+| Method | Route | Body | Response |
+|---|---|---|---|
+| `PUT` | `/quiet_hours` | `{"quiet_start", "quiet_end", "timezone"?}` | `200 printer` (same rules as the admin route) |
+| `DELETE` | `/quiet_hours` | | `200 printer` (also clears `timezone`) |
+| `GET` | `/members` | | `200 [{id, name, role}]`, newest first, without the owner |
+| `POST` | `/members` | `{"name"}` | `201 {id, name, role, invite}`: a new user who is a member of this printer only |
+| `DELETE` | `/members/{userID}` | | `204`; `404` if that user isn't a member of this printer |
+
+Owners get the user-facing printer response, without `error` and `last_heartbeat_at`. `POST /members` always creates a new account, even if the name already exists. An owner can't add an existing user.
 
 ## Development
 ### Dev database
@@ -336,7 +381,7 @@ migrate -path migrations -database "$DATABASE_URL" down 1
 psql "$DATABASE_URL"
 ```
 #### Load the seed data
-Wipes all data and inserts three printers, four users and sample messages in every status:
+Wipes all data and inserts four printers, six users and sample messages in every status:
 ```shell
 psql "$DATABASE_URL" -f migrations/seed.sql
 ```
@@ -348,13 +393,16 @@ The seeded printers and users have fixed, readable dev tokens. They must never b
 | Alice | `11111111-1111-1111-1111-111111111111` | `bbr_printer_dev_alice` | no quiet hours: use it to test the printer flow |
 | Bob | `22222222-2222-2222-2222-222222222222` | `bbr_printer_dev_bob` | quiet hours 22:00–07:00 |
 | Carol | `33333333-3333-3333-3333-333333333333` | `bbr_printer_dev_carol` | quiet hours 12:00–13:00, offline, reports `paper jam` |
+| Marc | `44444444-4444-4444-4444-444444444444` | `bbr_printer_dev_marc` | quiet hours 12:00–13:00, offline |
 
-| User | ID | Token | May send to |
-|---|---|---|---|
-| Dave | `aaaaaaaa-0000-0000-0000-000000000001` | session `bbr_user_dev_dave` | Alice |
-| Eve | `aaaaaaaa-0000-0000-0000-000000000002` | session `bbr_user_dev_eve` | Alice, Bob |
-| Frank | `aaaaaaaa-0000-0000-0000-000000000003` | session `bbr_user_dev_frank` (revoked) | Carol |
-| Grace | `aaaaaaaa-0000-0000-0000-000000000004` | invite `bbr_invite_dev_grace` (unclaimed) | Alice |
+| User | ID | Token | Owns | Member of |
+|---|---|---|---|---|
+| Dave | `aaaaaaaa-0000-0000-0000-000000000001` | session `bbr_user_dev_dave` | Alice | Marc |
+| Eve | `aaaaaaaa-0000-0000-0000-000000000002` | session `bbr_user_dev_eve` | Bob | Alice, Marc |
+| Frank | `aaaaaaaa-0000-0000-0000-000000000003` | session `bbr_user_dev_frank` (revoked) | Carol | Marc |
+| Grace | `aaaaaaaa-0000-0000-0000-000000000004` | invite `bbr_invite_dev_grace` (unclaimed) | | Alice |
+| Marc | `aaaaaaaa-0000-0000-0000-000000000005` | session `bbr_user_dev_marc` | Marc | |
+| Heidi | `aaaaaaaa-0000-0000-0000-000000000006` | session `bbr_user_dev_heidi` | | Alice (only printer: removing her revokes her session) |
 
 ### Run the API
 `ADMIN_TOKEN` is required; it protects the `/api/v1/admin` routes:
@@ -383,9 +431,28 @@ curl -s -X POST localhost:8080/api/v1/admin/printers -H 'Authorization: Bearer m
 Create a user who may send to Alice, then claim the invite from their device:
 ```shell
 curl -s -X POST localhost:8080/api/v1/admin/users -H 'Authorization: Bearer mytoken' \
-  -H 'Content-Type: application/json' -d '{"name":"Heidi","printer_ids":["11111111-1111-1111-1111-111111111111"]}' | jq
+  -H 'Content-Type: application/json' -d '{"name":"Ivan","printer_ids":["11111111-1111-1111-1111-111111111111"]}' | jq
 curl -s -X POST localhost:8080/api/v1/users/claim \
-  -H 'Content-Type: application/json' -d '{"invite":"<invite>","device_name":"Heidi phone"}' | jq
+  -H 'Content-Type: application/json' -d '{"invite":"<invite>","device_name":"Ivan phone"}' | jq
+```
+
+Manage printer Alice as its owner, Dave:
+```shell
+curl -s -X PUT localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/quiet_hours \
+  -H 'Authorization: Bearer bbr_user_dev_dave' -H 'Content-Type: application/json' \
+  -d '{"quiet_start":"22:00","quiet_end":"07:00"}' | jq
+curl -s localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/members \
+  -H 'Authorization: Bearer bbr_user_dev_dave' | jq
+curl -s -X POST localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/members \
+  -H 'Authorization: Bearer bbr_user_dev_dave' -H 'Content-Type: application/json' -d '{"name":"Judy"}' | jq
+curl -i -X DELETE localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/members/aaaaaaaa-0000-0000-0000-000000000006 \
+  -H 'Authorization: Bearer bbr_user_dev_dave'
+```
+
+Make a user the owner of a printer, as an admin (here Grace becomes the owner of a printer you created):
+```shell
+curl -s -X PUT localhost:8080/api/v1/admin/users/aaaaaaaa-0000-0000-0000-000000000004/printers/<printer id>/owner \
+  -H 'Authorization: Bearer mytoken' | jq
 ```
 
 Act as a printer, here Alice:
