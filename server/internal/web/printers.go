@@ -32,8 +32,12 @@ func (h *PrintersHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Get("/printers/{id}", h.get)
 	r.Patch("/printers/{id}", h.update)
 	r.Get("/printers/{id}/stats", h.getStats)
-	r.Put("/printers/{id}/quiet_hours", h.setQuietHours)
-	r.Delete("/printers/{id}/quiet_hours", h.clearQuietHours)
+	r.Put("/printers/{id}/quiet_hours", h.setQuietHours(func(p *printers.Printer) any {
+		return toPrinterAdminResponse(p)
+	}))
+	r.Delete("/printers/{id}/quiet_hours", h.clearQuietHours(func(p *printers.Printer) any {
+		return toPrinterAdminResponse(p)
+	}))
 	r.Post("/printers/{id}/rotate_token", h.rotateToken)
 }
 
@@ -45,6 +49,16 @@ func (h *PrintersHandler) RegisterPrinterRoutes(r chi.Router) {
 // RegisterUserRoutes registers routes mounted under /user (behind RequireUserToken).
 func (h *PrintersHandler) RegisterUserRoutes(r chi.Router) {
 	r.Get("/printers", h.listForUser)
+}
+
+// RegisterPrinterOwnerRoutes registers routes mounted under /user/printers/{id} (behind RequirePrinterOwner).
+func (h *PrintersHandler) RegisterPrinterOwnerRoutes(r chi.Router) {
+	r.Put("/quiet_hours", h.setQuietHours(func(p *printers.Printer) any {
+		return toPrinterPublicResponse(p)
+	}))
+	r.Delete("/quiet_hours", h.clearQuietHours(func(p *printers.Printer) any {
+		return toPrinterPublicResponse(p)
+	}))
 }
 
 // -- Requests ----
@@ -116,6 +130,54 @@ type printerStatsResponse struct {
 }
 
 // -- Handlers ----
+
+// -- Mix Group Handlers ----
+
+func (h *PrintersHandler) setQuietHours(toResponse func(*printers.Printer) any) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+		if !ok {
+			return
+		}
+
+		var req printerSetQuietHoursRequest
+		if err := decodeJSONBody(w, r, &req); err != nil {
+			writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		params := printers.QuietHoursParams{
+			QuietStart: req.QuietStart,
+			QuietEnd:   req.QuietEnd,
+			Timezone:   req.Timezone,
+		}
+
+		p, err := h.service.SetQuietHours(r.Context(), id, params)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+
+		writeJSONResponse(w, http.StatusOK, toResponse(p))
+	}
+}
+
+func (h *PrintersHandler) clearQuietHours(toResponse func(*printers.Printer) any) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+		if !ok {
+			return
+		}
+
+		p, err := h.service.ClearQuietHours(r.Context(), id)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+
+		writeJSONResponse(w, http.StatusOK, toResponse(p))
+	}
+}
 
 // -- Admin Handlers ----
 
@@ -216,48 +278,6 @@ func (h *PrintersHandler) getStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, http.StatusOK, toPrinterStatsResponse(ps))
-}
-
-func (h *PrintersHandler) setQuietHours(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
-	if !ok {
-		return
-	}
-
-	var req printerSetQuietHoursRequest
-	if err := decodeJSONBody(w, r, &req); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	params := printers.QuietHoursParams{
-		QuietStart: req.QuietStart,
-		QuietEnd:   req.QuietEnd,
-		Timezone:   req.Timezone,
-	}
-
-	p, err := h.service.SetQuietHours(r.Context(), id, params)
-	if err != nil {
-		h.handleError(w, err)
-		return
-	}
-
-	writeJSONResponse(w, http.StatusOK, toPrinterAdminResponse(p))
-}
-
-func (h *PrintersHandler) clearQuietHours(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
-	if !ok {
-		return
-	}
-
-	p, err := h.service.ClearQuietHours(r.Context(), id)
-	if err != nil {
-		h.handleError(w, err)
-		return
-	}
-
-	writeJSONResponse(w, http.StatusOK, toPrinterAdminResponse(p))
 }
 
 func (h *PrintersHandler) rotateToken(w http.ResponseWriter, r *http.Request) {

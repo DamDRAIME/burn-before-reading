@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -31,11 +32,12 @@ func fromPgTime(v pgtype.Time) *printers.TimeOfDay {
 }
 
 type PrinterStore struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	logger *slog.Logger
 }
 
-func NewPrinterStore(pool *pgxpool.Pool) *PrinterStore {
-	return &PrinterStore{pool: pool}
+func NewPrinterStore(pool *pgxpool.Pool, logger *slog.Logger) *PrinterStore {
+	return &PrinterStore{pool: pool, logger: logger}
 }
 
 // Compile-time check to ensure PrinterStore implements the printers.Store interface

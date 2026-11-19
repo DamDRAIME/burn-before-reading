@@ -6,7 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	
+
 	"github.com/google/uuid"
 
 	"bbr/internal/printers"
@@ -68,7 +68,6 @@ func printerIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	return printerID, ok
 }
 
-
 // -- User --
 
 type userAuthenticator interface {
@@ -88,7 +87,7 @@ func RequireUserToken(auth userAuthenticator, logger *slog.Logger) func(http.Han
 				return
 			}
 			userID, sessionID, err := auth.Authenticate(r.Context(), token)
-			if errors.Is(err, users.ErrInvalidToken) {
+			if errors.Is(err, users.ErrInvalidSessionToken) {
 				writeErrorResponse(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
@@ -112,4 +111,37 @@ func userIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 func sessionIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	sessionID, ok := ctx.Value(sessionIDKey{}).(uuid.UUID)
 	return sessionID, ok
+}
+
+// -- Owner --
+
+type printerOwnershipChecker interface {
+	IsOwner(ctx context.Context, userID, printerID uuid.UUID) (bool, error)
+}
+
+func RequirePrinterOwner(checker printerOwnershipChecker, logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := userIDFromContext(r.Context())
+			if !ok {
+				writeErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			printerID, ok := parseUUIDParam(w, r, "id", "invalid printer ID")
+			if !ok {
+				return
+			}
+			isOwner, err := checker.IsOwner(r.Context(), userID, printerID)
+			if err != nil {
+				logger.Error("failed to check printer ownership", "error", err)
+				writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
+				return
+			}
+			if !isOwner {
+				writeErrorResponse(w, http.StatusForbidden, "forbidden")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

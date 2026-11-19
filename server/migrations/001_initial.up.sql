@@ -71,8 +71,27 @@ CREATE TABLE user_printers (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     printer_id UUID NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
 
+    role VARCHAR(20) NOT NULL DEFAULT 'member',
+
+    CONSTRAINT user_printers_role_check CHECK (
+        role IN (
+            'member',
+            'owner'
+        )
+    ),
+
     PRIMARY KEY (user_id, printer_id)
 );
+
+-- A printer can only have one owner
+CREATE UNIQUE INDEX uq_user_printers_one_owner_per_printer
+    ON user_printers (printer_id)
+    WHERE role = 'owner';
+
+-- A user can only own one printer
+CREATE UNIQUE INDEX uq_user_printers_one_printer_per_owner
+    ON user_printers (user_id)
+    WHERE role = 'owner';
 
 -- Users-Sessions Table
 
@@ -89,13 +108,34 @@ CREATE TABLE user_sessions (
     revoked_at TIMESTAMPTZ
 );
 
+-- Printer Join Tokens Table
+
+CREATE TABLE printer_join_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    printer_id UUID NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+
+    created_by UUID REFERENCES users(id) ON DELETE CASCADE, -- NULL for tokens created by Admin
+    used_by UUID REFERENCES users(id) ON DELETE SET NULL,
+
+    
+    token_hash BYTEA NOT NULL UNIQUE, -- Effective while the user that created it still owns the printer.
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_printer_join_tokens_printer
+    ON printer_join_tokens (printer_id, created_at DESC);
+
 -- Messages Table
 
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sequence_number BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
 
-    sender_id UUID REFERENCES users(id), -- NULL for admin messages
+    sender_id UUID REFERENCES users(id), -- NULL for messages created by Admin
     sender_ip INET NOT NULL,
     source VARCHAR(20) NOT NULL DEFAULT 'web',
 

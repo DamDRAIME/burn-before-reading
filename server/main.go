@@ -68,13 +68,13 @@ func run(logger *slog.Logger) error {
 	defer pool.Close()
 
 	// Initialize message store and service
-	printerStore := database.NewPrinterStore(pool)
+	printerStore := database.NewPrinterStore(pool, logger)
 	printerService := printers.NewService(printerStore)
 	printerHandler := web.NewPrintersHandler(printerService, logger)
-	userStore := database.NewUserStore(pool)
+	userStore := database.NewUserStore(pool, logger)
 	userService := users.NewService(userStore)
 	userHandler := web.NewUsersHandler(userService, logger)
-	msgStore := database.NewMessageStore(pool)
+	msgStore := database.NewMessageStore(pool, logger)
 	msgService := messages.NewService(msgStore, printerService, userService)
 	msgHandler := web.NewMessagesHandler(msgService, logger)
 
@@ -95,7 +95,7 @@ func run(logger *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, userHandler, adminToken, printerService, userService, logger))
+	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, userHandler, adminToken, printerService, userService, userService, logger))
 
 	// Optional: serve the frontend from the same origin as the API.
 	if webDir := os.Getenv("WEB_DIR"); webDir != "" {
