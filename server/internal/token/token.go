@@ -8,9 +8,10 @@ import (
 type Prefix string
 
 const (
-	PrinterPrefix Prefix = "bbr_printer_"
 	InvitePrefix  Prefix = "bbr_invite_"
-	SessionPrefix Prefix = "bbr_user_"
+	JoinPrefix    Prefix = "bbr_join_"
+	PrinterPrefix Prefix = "bbr_printer_"
+	SessionPrefix Prefix = "bbr_session_"
 )
 
 // Generate returns a new random token and its hash.

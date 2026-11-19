@@ -6,7 +6,7 @@
 -- -- Reset (optional) -----------------------------------------
 -- Wipes all data and restarts messages.sequence_number at 1.
 
-TRUNCATE messages, user_sessions, user_printers, users, printers RESTART IDENTITY CASCADE;
+TRUNCATE messages, user_sessions, user_printers, users, printers, printer_join_tokens RESTART IDENTITY CASCADE;
 
 -- -- Printers -------------------------------------------------
 -- Fixed IDs so the rows below (and manual API calls) can reference them.
@@ -26,8 +26,10 @@ INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezon
 --   Eve:   active session, may send to her printer, Alice/Dave's, and Marc's printer
 --   Frank: one revoked session, may send to his printer and Marc's printer
 --   Grace: invited, invite not claimed yet (claim it with bbr_invite_dev_grace), may send to Alice/Dave's printer
---   Marc:   active session, may send to his printer only
---   Heidi: active session, member of Alice/Dave's printer only (removing her revokes her sessions)
+--   Marc:  active session, may send to his printer only
+--   Heidi: active session, member of Alice/Dave's printer only (removing her revokes her sessions);
+--          she signed up with a join token from Dave
+-- Names are unique per printer (case-insensitive), not globally.
 
 INSERT INTO users (id, name, invite_hash, invite_expires_at, created_at) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', 'Dave',  NULL,                            NULL,                      NOW() - INTERVAL '25 days'),
@@ -49,13 +51,24 @@ INSERT INTO user_printers (user_id, printer_id, role) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000003', '44444444-4444-4444-4444-444444444444', 'member'),
     ('aaaaaaaa-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'member');
 
--- token_hash is sha256('bbr_user_dev_<name>')
+-- token_hash is sha256('bbr_session_dev_<name>')
 INSERT INTO user_sessions (id, user_id, device_name, token_hash, created_at, revoked_at) VALUES
-    ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'Dave''s phone',   sha256('bbr_user_dev_dave'),  NOW() - INTERVAL '25 days', NULL),
-    ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002', 'Eve''s laptop',   sha256('bbr_user_dev_eve'),   NOW() - INTERVAL '15 days', NULL),
-    ('cccccccc-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000003', 'Old tablet',      sha256('bbr_user_dev_frank'), NOW() - INTERVAL '40 days', NOW() - INTERVAL '10 days'),
-    ('cccccccc-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005', 'Marc''s desktop', sha256('bbr_user_dev_marc'),  NOW() - INTERVAL '1 hour',  NULL),
-    ('cccccccc-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-000000000006', 'Heidi''s phone',  sha256('bbr_user_dev_heidi'), NOW() - INTERVAL '2 hours', NULL);
+    ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'Dave''s phone',   sha256('bbr_session_dev_dave'),  NOW() - INTERVAL '25 days', NULL),
+    ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002', 'Eve''s laptop',   sha256('bbr_session_dev_eve'),   NOW() - INTERVAL '15 days', NULL),
+    ('cccccccc-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000003', 'Old tablet',      sha256('bbr_session_dev_frank'), NOW() - INTERVAL '40 days', NOW() - INTERVAL '10 days'),
+    ('cccccccc-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005', 'Marc''s desktop', sha256('bbr_session_dev_marc'),  NOW() - INTERVAL '1 hour',  NULL),
+    ('cccccccc-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-000000000006', 'Heidi''s phone',  sha256('bbr_session_dev_heidi'), NOW() - INTERVAL '2 hours', NULL);
+
+-- -- Printer join tokens --------------------------------------
+-- token_hash is sha256('bbr_join_dev_<name>'); created_by NULL = created by the admin.
+--   marc:  pending, created by Marc for his printer (sign up with it, or redeem it from a session)
+--   heidi: used by Heidi to sign up on Alice/Dave's printer, created by Dave (its owner)
+--   eve:   revoked, created by the admin for Eve's office printer
+
+INSERT INTO printer_join_tokens (id, printer_id, created_by, used_by, token_hash, created_at, expires_at, used_at, revoked_at) VALUES
+    ('dddddddd-0000-0000-0000-000000000001', '44444444-4444-4444-4444-444444444444', 'aaaaaaaa-0000-0000-0000-000000000005', NULL,                                   sha256('bbr_join_dev_marc'),  NOW() - INTERVAL '10 minutes', NOW() + INTERVAL '2 days',            NULL,                       NULL),
+    ('dddddddd-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000006', sha256('bbr_join_dev_heidi'), NOW() - INTERVAL '3 hours',    NOW() + INTERVAL '2 days' - INTERVAL '3 hours', NOW() - INTERVAL '2 hours', NULL),
+    ('dddddddd-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', NULL,                                   NULL,                                   sha256('bbr_join_dev_eve'),   NOW() - INTERVAL '1 day',      NOW() + INTERVAL '1 day',             NULL,                       NOW() - INTERVAL '20 hours');
 
 -- -- Messages -------------------------------------------------
 -- sender_id is NULL for admin messages; the API derives sender_name from users.name.
