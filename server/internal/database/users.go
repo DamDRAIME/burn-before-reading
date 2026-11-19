@@ -597,6 +597,151 @@ func (s *UserStore) CreateJoinToken(ctx context.Context, params users.CreateJoin
 	return &t, nil
 }
 
+func (s *UserStore) ListJoinTokens(ctx context.Context, printerID uuid.UUID, limit, offset int) ([]*users.JoinToken, error) {
+	rows, err := s.pool.Query(
+		ctx,
+		`SELECT `+joinTokenColumns+`
+		FROM printer_join_tokens t
+		LEFT JOIN users u ON u.id = t.used_by
+		WHERE t.printer_id = $1
+		ORDER BY t.created_at DESC
+		LIMIT $2 OFFSET $3`,
+		printerID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list join tokens: %w", err)
+	}
+	defer rows.Close()
+
+	tokens, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*users.JoinToken, error) {
+		t, err := scanJoinToken(row)
+		return &t, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list join tokens: %w", err)
+	}
+
+	// If there is no token, check if this due to an unknown printer or a printer that doesn't have any
+	if len(tokens) == 0 {
+		var exists bool
+		err := s.pool.QueryRow(
+			ctx,
+			`SELECT EXISTS (SELECT 1 FROM printers WHERE id = $1)`,
+			printerID,
+		).Scan(&exists)
+		if err != nil {
+			return nil, fmt.Errorf("check printer exists: %w", err)
+		}
+		if !exists {
+			return nil, users.ErrPrinterNotFound
+		}
+	}
+	return tokens, nil
+}
+
+func (s *UserStore) RevokeJoinToken(ctx context.Context, printerID, tokenID uuid.UUID) error {
+	var id uuid.UUID
+	err := s.pool.QueryRow(
+		ctx,
+		`UPDATE printer_join_tokens
+		SET revoked_at = COALESCE(revoked_at, NOW())
+		WHERE id = $1
+			AND printer_id = $2
+			AND used_at IS NULL
+		RETURNING id`,
+		tokenID,
+		printerID,
+	).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return users.ErrJoinTokenNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("revoke join token: %w", err)
+	}
+	return nil
+}
+
+func (s *UserStore) SignupWithJoinToken(ctx context.Context, params users.SignupParams) (uuid.UUID, uuid.UUID, error) {
+	var userID uuid.UUID
+	var sessionID uuid.UUID
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		printerID, err := lockJoinTokenPrinter(ctx, tx, params.JoinTokenHash)
+		if err != nil {
+			return err
+		}
+		err = ensureNameIsAvailableOnPrinters(ctx, tx, uuid.Nil, params.UserName, []uuid.UUID{printerID})
+		if err != nil {
+			return err
+		}
+
+		err = tx.QueryRow(ctx, `INSERT INTO users (name) VALUEs ($1) RETURNING id`, params.UserName).Scan(&userID)
+		if err != nil {
+			return fmt.Errorf("create user: %w", err)
+		}
+
+		// Any error from here on rolls back the transaction, so no orphan user is left behind
+		if err := consumeJoinToken(ctx, tx, params.JoinTokenHash, userID); err != nil {
+			return err
+		}
+		err = insertUserPrinters(ctx, tx, userID, []users.PrinterAccess{{PrinterID: printerID, Role: users.RoleMember}})
+		if err != nil {
+			return err
+		}
+
+		sessionID, err = insertSession(ctx, tx, userID, params.SessionTokenHash, params.DeviceName)
+		return err
+	})
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	return userID, sessionID, nil
+}
+
+func (s *UserStore) RedeemJoinToken(ctx context.Context, userID uuid.UUID, joinTokenHash []byte) (uuid.UUID, error) {
+	var printerID uuid.UUID
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		printerID, err := lockJoinTokenPrinter(ctx, tx, joinTokenHash)
+		if err != nil {
+			return err
+		}
+
+		name, err := lockUser(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+
+		var linked bool
+		err = tx.QueryRow(
+			ctx,
+			`SELECT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1 AND printer_id = $2)`,
+			userID,
+			printerID,
+		).Scan(&linked)
+		if err != nil {
+			return fmt.Errorf("check membership: %w", err)
+		}
+
+		if linked {
+			return users.ErrAlreadyMember
+		}
+
+		if err := ensureNameIsAvailableOnPrinters(ctx, tx, userID, name, []uuid.UUID{printerID}); err != nil {
+			return err
+		}
+		if err := consumeJoinToken(ctx, tx, joinTokenHash, userID); err != nil {
+			return err
+		}
+		return insertUserPrinters(ctx, tx, userID, []users.PrinterAccess{{PrinterID: printerID, Role: users.RoleMember}})
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return printerID, nil
+}
+
 // -- Locks ----
 
 // lockUser locks the user row, bumps last_updated_at (the user's printers are part of the user)
@@ -672,7 +817,7 @@ func getUser(ctx context.Context, q queryRower, id uuid.UUID) (*users.User, erro
 // ensureUserExists returns ErrUserNotFound when no user has this ID
 func ensureUserExists(ctx context.Context, q queryRower, id uuid.UUID) error {
 	var exists bool
-	if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, id).Scan(&exists); err != nil {
+	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)`, id).Scan(&exists); err != nil {
 		return fmt.Errorf("check user exists: %w", err)
 	}
 	if !exists {
@@ -869,7 +1014,7 @@ func revokeAccessIfNoPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID) 
 		SET revoked_at = NOW()
 		WHERE revoked_at IS NULL
 			AND user_id = $1
-			AND NOT EXISTS(SELECT 1 FROM user_printers WHERE user_id = $1)`,
+			AND NOT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1)`,
 		userID,
 	)
 	if err != nil {
