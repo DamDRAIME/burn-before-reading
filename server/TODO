@@ -83,7 +83,7 @@
 - [X] Reject invalid `limit` / `offset` with 400 instead of silently ignoring or capping them
 - [X] Consistent status codes for users: unknown printer in a body → 400, unknown user in the URL → 404 (sessions list / revoke all included), `printer_ids` required on PUT
 - [X] User handlers return 500 (like printer handlers) when the user ID is missing from the context
-- [ ] Run `gofmt` on `internal/web/auth.go` and `internal/web/mappers.go`
+- [X] Run `gofmt` on `internal/web/auth.go` and `internal/web/mappers.go`
 - [ ] Add tests for the service layer using a fake Store (start with `printers.Service.Authenticate`: valid token, unknown token → ErrInvalidToken, store error passed through)
 - [ ] Add `httptest` tests for `RequirePrinterToken` and `RequireUserToken` with fake authenticators, including the 500 path (not covered by the manual curl tests)
 - [X] Fill in the README "Server" section (replaced by the API reference and database diagram)

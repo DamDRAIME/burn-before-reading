@@ -68,7 +68,6 @@ func printerIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	return printerID, ok
 }
 
-
 // -- User --
 
 type userAuthenticator interface {
