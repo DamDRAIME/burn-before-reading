@@ -22,8 +22,8 @@ Every protected route expects an `Authorization: Bearer <token>` header. The tok
 |---|---|---|---|
 | Admin | `/api/v1/admin` | the `ADMIN_TOKEN` environment variable | server configuration (placeholder until real admin accounts exist) |
 | Printer | `/api/v1/printer` | `bbr_printer_…` | `POST /admin/printers` or `POST /admin/printers/{id}/rotate_token` |
-| User | `/api/v1/user` | `bbr_user_…` | `POST /users/join` with a `bbr_join_…` join token, or `POST /users/claim` with a `bbr_invite_…` invite |
-| Printer owner | `/api/v1/user/printers/{id}/…` | `bbr_user_…` of the user who owns printer `{id}` | an admin makes the user the owner of that printer |
+| User | `/api/v1/user` | `bbr_session_…` | `POST /users/join` with a `bbr_join_…` join token, or `POST /users/claim` with a `bbr_invite_…` invite |
+| Printer owner | `/api/v1/user/printers/{id}/…` | `bbr_session_…` of the user who owns printer `{id}` | an admin makes the user the owner of that printer |
 | Public | `/api/v1/users/join`, `/api/v1/users/claim`, `/health` | none | |
 
 - Printer, session, invite and join tokens are random (about 130 bits) and only ever stored as `sha256(token)`. Someone who gets a copy of the database can't use it to call the API.
@@ -79,7 +79,7 @@ Each link between a user and a printer has a **role**, `member` or `owner`. Both
    - `DELETE /admin/printers/{id}/owner` demotes the owner to member, or with `?keep_as_member=false` removes their link (with the effects of step 6).
    - A join token created by an owner only works while that user still owns the printer. Losing ownership revokes their pending tokens.
    - Owner routes are checked per printer: on a printer you don't own you get `403`. Losing ownership takes effect on the next request.
-8. **Recovery.** If a user has lost every device, `POST /admin/users/{id}/invite` sets a new 2-day invite and **revokes all their sessions** (a lost phone may be in someone else's hands). Send `{"keep_sessions": true}` to keep them. A user with no printer gets `409`.
+8. **Recovery.** If a user has lost every device, `POST /admin/users/{id}/invite` sets a new 2-day invite and **revokes all their sessions** (a lost phone may be in someone else's hands). Send `{"revoke_sessions": false}` to keep them. A user with no printer gets `409`.
 
 Not covered yet: deleting or renaming accounts.
 
@@ -107,7 +107,7 @@ erDiagram
         UUID id PK
         UUID user_id FK "ON DELETE CASCADE"
         VARCHAR device_name "1..50 chars"
-        BYTEA token_hash UK "sha256 of the bbr_user_ token"
+        BYTEA token_hash UK "sha256 of the bbr_session_ token"
         TIMESTAMPTZ created_at
         TIMESTAMPTZ last_used_at "set on auth, at most every 5 min"
         TIMESTAMPTZ revoked_at "NULL while active"
@@ -174,7 +174,7 @@ Membership changes lock the affected `printers` rows (`SELECT … FOR UPDATE`) s
 - **Owners no longer create accounts.** `POST /user/printers/{id}/members` is gone. Owners create join tokens instead, and people sign up with them (`POST /users/join`) or, if they already have an account, redeem them (`POST /user/memberships`). This removes copies of the same person on different printers, and owners no longer receive anyone's login.
 - **New table:** `printer_join_tokens`.
 - **Ownership moved to the printer:** `PUT /admin/users/{id}/printers/{printerID}/owner` was replaced by `PUT /admin/printers/{id}/owner {user_id}` (transfers in one call) and `DELETE /admin/printers/{id}/owner`.
-- **Admin invite reissue is recovery:** it now revokes the user's sessions unless `{"keep_sessions": true}`, and returns `expires_at`.
+- **Admin invite reissue is recovery:** it now revokes the user's sessions unless `{"revoke_sessions": false}`, and returns `expires_at`.
 - **New user routes:** device invites, own session list and revocation, redeeming a join token, leaving a printer.
 - **Names are unique per printer.**
 - **`PUT /admin/users/{id}/printers` now rejects queued messages** to the printers it removes, like the other removal paths.
@@ -388,7 +388,7 @@ Quiet hours are `"HH:MM"` strings and may cross midnight (`"22:00"` to `"07:00"`
 | `GET` | `/users` | | `200 [user]` |
 | `GET` | `/users/{id}` | | `200 user` |
 | `PUT` | `/users/{id}/printers` | `{"printer_accesses": [{"printer_id", "role"}]}` (required; replaces all links; `[]` removes all access) | `200 user` |
-| `POST` | `/users/{id}/invite` | optional `{"keep_sessions"}` (default `false`) | `200 {"invite", "expires_at"}`; account recovery: revokes all sessions unless `keep_sessions` |
+| `POST` | `/users/{id}/invite` | optional `{"revoke_sessions"}` (default `true`) | `200 {"invite", "expires_at"}`; account recovery: revokes all sessions unless `{"revoke_sessions": false}` |
 | `GET` | `/users/{id}/sessions` | | `200 [session]`, newest first |
 | `DELETE` | `/users/{id}/sessions` | | `204`, revokes every active session |
 | `DELETE` | `/users/{id}/sessions/{sessionID}` | | `204` (repeating it is harmless) |
@@ -472,12 +472,12 @@ The seeded printers and users have fixed, readable dev tokens. They must never b
 
 | User | ID | Token | Owns | Member of |
 |---|---|---|---|---|
-| Dave | `aaaaaaaa-0000-0000-0000-000000000001` | session `bbr_user_dev_dave` | Alice | Marc |
-| Eve | `aaaaaaaa-0000-0000-0000-000000000002` | session `bbr_user_dev_eve` | Bob | Alice, Marc |
-| Frank | `aaaaaaaa-0000-0000-0000-000000000003` | session `bbr_user_dev_frank` (revoked) | Carol | Marc |
+| Dave | `aaaaaaaa-0000-0000-0000-000000000001` | session `bbr_session_dev_dave` | Alice | Marc |
+| Eve | `aaaaaaaa-0000-0000-0000-000000000002` | session `bbr_session_dev_eve` | Bob | Alice, Marc |
+| Frank | `aaaaaaaa-0000-0000-0000-000000000003` | session `bbr_session_dev_frank` (revoked) | Carol | Marc |
 | Grace | `aaaaaaaa-0000-0000-0000-000000000004` | invite `bbr_invite_dev_grace` (unclaimed) | | Alice |
-| Marc | `aaaaaaaa-0000-0000-0000-000000000005` | session `bbr_user_dev_marc` | Marc | |
-| Heidi | `aaaaaaaa-0000-0000-0000-000000000006` | session `bbr_user_dev_heidi` | | Alice (only printer: removing her revokes her session); signed up with Dave's join token |
+| Marc | `aaaaaaaa-0000-0000-0000-000000000005` | session `bbr_session_dev_marc` | Marc | |
+| Heidi | `aaaaaaaa-0000-0000-0000-000000000006` | session `bbr_session_dev_heidi` | | Alice (only printer: removing her revokes her session); signed up with Dave's join token |
 
 | Join token | Printer | Created by | State |
 |---|---|---|---|
@@ -493,7 +493,7 @@ ADMIN_TOKEN=mytoken go run .
 
 Submit a message as Dave:
 ```shell
-curl -s -X POST localhost:8080/api/v1/user/messages -H 'Authorization: Bearer bbr_user_dev_dave' \
+curl -s -X POST localhost:8080/api/v1/user/messages -H 'Authorization: Bearer bbr_session_dev_dave' \
   -H 'Content-Type: application/json' -d '{"printer_id":"11111111-1111-1111-1111-111111111111","content":"Hello!"}' | jq
 ```
 
@@ -522,30 +522,30 @@ Sign up with Marc's join token, then redeem another one from an existing account
 curl -s -X POST localhost:8080/api/v1/users/join \
   -H 'Content-Type: application/json' -d '{"join_token":"bbr_join_dev_marc","name":"Judy","device_name":"Judy phone"}' | jq
 curl -s -X POST localhost:8080/api/v1/user/printers/44444444-4444-4444-4444-444444444444/join_tokens \
-  -H 'Authorization: Bearer bbr_user_dev_marc' | jq
-curl -s -X POST localhost:8080/api/v1/user/memberships -H 'Authorization: Bearer bbr_user_dev_heidi' \
+  -H 'Authorization: Bearer bbr_session_dev_marc' | jq
+curl -s -X POST localhost:8080/api/v1/user/memberships -H 'Authorization: Bearer bbr_session_dev_heidi' \
   -H 'Content-Type: application/json' -d '{"join_token":"<join_token>"}' | jq
 ```
 
 Add a device to your own account (as Dave), then list your sessions:
 ```shell
-curl -s -X POST localhost:8080/api/v1/user/invite -H 'Authorization: Bearer bbr_user_dev_dave' | jq
+curl -s -X POST localhost:8080/api/v1/user/invite -H 'Authorization: Bearer bbr_session_dev_dave' | jq
 curl -s -X POST localhost:8080/api/v1/users/claim \
   -H 'Content-Type: application/json' -d '{"invite":"<invite>","device_name":"Dave laptop"}' | jq
-curl -s localhost:8080/api/v1/user/sessions -H 'Authorization: Bearer bbr_user_dev_dave' | jq
+curl -s localhost:8080/api/v1/user/sessions -H 'Authorization: Bearer bbr_session_dev_dave' | jq
 ```
 
 Manage printer Alice as its owner, Dave:
 ```shell
 curl -s -X PUT localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/quiet_hours \
-  -H 'Authorization: Bearer bbr_user_dev_dave' -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer bbr_session_dev_dave' -H 'Content-Type: application/json' \
   -d '{"quiet_start":"22:00","quiet_end":"07:00"}' | jq
 curl -s localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/members \
-  -H 'Authorization: Bearer bbr_user_dev_dave' | jq
+  -H 'Authorization: Bearer bbr_session_dev_dave' | jq
 curl -s localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/join_tokens \
-  -H 'Authorization: Bearer bbr_user_dev_dave' | jq
+  -H 'Authorization: Bearer bbr_session_dev_dave' | jq
 curl -i -X DELETE localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-111111111111/members/aaaaaaaa-0000-0000-0000-000000000006 \
-  -H 'Authorization: Bearer bbr_user_dev_dave'
+  -H 'Authorization: Bearer bbr_session_dev_dave'
 ```
 
 Transfer a printer, as an admin (here Grace becomes the owner of Marc's printer, and Marc a member):

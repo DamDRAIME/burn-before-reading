@@ -703,7 +703,7 @@ func (s *UserStore) RedeemJoinToken(ctx context.Context, userID uuid.UUID, joinT
 	var printerID uuid.UUID
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var err error
-		printerID, err := lockJoinTokenPrinter(ctx, tx, joinTokenHash)
+		printerID, err = lockJoinTokenPrinter(ctx, tx, joinTokenHash)
 		if err != nil {
 			return err
 		}
@@ -795,7 +795,7 @@ func lockJoinTokenPrinter(ctx context.Context, tx pgx.Tx, joinTokenHash []byte) 
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("find join token: %w", err)
 	}
-	if err := lockPrinters(ctx, tx, []uuid.UUID{printerID}, users.ErrInvalidInviteToken); err != nil {
+	if err := lockPrinters(ctx, tx, []uuid.UUID{printerID}, users.ErrInvalidJoinToken); err != nil {
 		return uuid.Nil, err
 	}
 	return printerID, nil
@@ -861,7 +861,7 @@ func consumeJoinToken(ctx context.Context, tx pgx.Tx, joinTokenHash []byte, user
 	tag, err := tx.Exec(
 		ctx,
 		`UPDATE printer_join_tokens t
-		SET used_at = NOW, used_by = $1
+		SET used_at = NOW(), used_by = $1
 		WHERE t.token_hash = $2
 			AND `+joinTokenValidCondition,
 		userID,
@@ -908,7 +908,7 @@ func rejectQueuedMessages(ctx context.Context, tx pgx.Tx, userID uuid.UUID, prin
 
 	_, err := tx.Exec(ctx,
 		`UPDATE messages
-		SET status = $1, moderated at = NOW()
+		SET status = $1, moderated_at = NOW()
 		WHERE sender_id = $2
 			AND printer_id = ANY($3::uuid[])
 			AND status = ANY($4)`,

@@ -173,7 +173,7 @@ type joinTokenUserResponse struct {
 type joinTokenResponse struct {
 	ID        uuid.UUID              `json:"id"`
 	PrinterID uuid.UUID              `json:"printer_id"`
-	CreatedBy uuid.UUID              `json:"created_by"`
+	CreatedBy *uuid.UUID             `json:"created_by"`
 	Status    users.JoinTokenStatus  `json:"status"`
 	UsedBy    *joinTokenUserResponse `json:"used_by"`
 	CreatedAt time.Time              `json:"created_at"`
@@ -363,7 +363,7 @@ func (h *UsersHandler) issueRecoveryInvite(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	var req userIssueRecoveryInviteRequest
+	req := userIssueRecoveryInviteRequest{RevokeAllSessions: true}                // default: recovery revokes all sessions
 	if err := decodeJSONBody(w, r, &req); err != nil && !errors.Is(err, io.EOF) { // the body is optional
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -451,6 +451,7 @@ func (h *UsersHandler) demoteOwner(w http.ResponseWriter, r *http.Request) {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
 			writeErrorResponse(w, http.StatusBadRequest, "invalid keep_as_member: must be true or false")
+			return
 		}
 		keepAsMember = b
 	}
@@ -645,7 +646,7 @@ func toJoinTokenResponse(t *users.JoinToken) joinTokenResponse {
 	return joinTokenResponse{
 		ID:        t.ID,
 		PrinterID: t.PrinterID,
-		CreatedBy: *t.CreatedBy,
+		CreatedBy: t.CreatedBy,
 		Status:    t.Status(time.Now()),
 		UsedBy:    usedBy,
 		CreatedAt: t.CreatedAt,

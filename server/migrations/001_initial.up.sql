@@ -112,7 +112,7 @@ CREATE TABLE user_sessions (
 
 CREATE TABLE printer_join_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    printer_id UUID NOT NULL REFERENCES printer(id) ON DELETE CASCADE,
+    printer_id UUID NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
 
     created_by UUID REFERENCES users(id) ON DELETE CASCADE, -- NULL for tokens created by Admin
     used_by UUID REFERENCES users(id) ON DELETE SET NULL,

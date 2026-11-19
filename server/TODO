@@ -1,7 +1,7 @@
 # TODO
 ## Authentication & authorization
 
-- [X] Authenticate submitters: invite → session token (`bbr_user_…`, SHA-256 in `user_sessions.token_hash`); only they can POST /user/messages
+- [X] Authenticate submitters: invite → session token (`bbr_session_…`, SHA-256 in `user_sessions.token_hash`); only they can POST /user/messages
 - [ ] Moderator/admin role: only they can approve, reject, list messages and see sender_ip (still a single static `ADMIN_TOKEN`)
 - [X] Per-printer API tokens: SHA-256 hash in `printers.token_hash`, plain token returned once on create, `RequirePrinterToken` middleware puts the printer ID in the request context
 - [X] Printer routes take the printer ID from the token instead of the URL (`/printer/heartbeat`, `/printer/messages/oldest/claim`)
@@ -34,7 +34,7 @@
 - [X] An owner's join token only works while they own the printer; losing ownership revokes their pending tokens (`revokeStaleJoinTokens`)
 - [X] Names are unique per printer, case-insensitive (`ensureNameFreeOnPrinters`, under `lockPrinters`); not globally, to avoid name probing and squatting
 - [X] Users list and revoke their own sessions (`GET /user/sessions` with `current`, `DELETE /user/sessions/{id}`), and leave a printer (`DELETE /user/memberships/{printerID}`, 409 for the owner)
-- [X] Admin invite reissue is account recovery: revokes all sessions unless `{"keep_sessions": true}`; 409 for a user with no printer
+- [X] Admin invite reissue is account recovery: revokes all sessions unless `{"revoke_sessions": false}`; 409 for a user with no printer
 - [ ] Rate-limit the unauthenticated `POST /users/join` and `POST /users/claim` per IP (tokens are 130-bit, so this is about abuse, not guessing)
 - [ ] Dormant accounts (no printer left) accumulate: an admin route to delete accounts, and an admin view of join tokens across printers
 - [ ] Renaming accounts: must run the per-printer name check on all of the user's printers

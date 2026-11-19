@@ -51,13 +51,13 @@ INSERT INTO user_printers (user_id, printer_id, role) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000003', '44444444-4444-4444-4444-444444444444', 'member'),
     ('aaaaaaaa-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'member');
 
--- token_hash is sha256('bbr_user_dev_<name>')
+-- token_hash is sha256('bbr_session_dev_<name>')
 INSERT INTO user_sessions (id, user_id, device_name, token_hash, created_at, revoked_at) VALUES
-    ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'Dave''s phone',   sha256('bbr_user_dev_dave'),  NOW() - INTERVAL '25 days', NULL),
-    ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002', 'Eve''s laptop',   sha256('bbr_user_dev_eve'),   NOW() - INTERVAL '15 days', NULL),
-    ('cccccccc-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000003', 'Old tablet',      sha256('bbr_user_dev_frank'), NOW() - INTERVAL '40 days', NOW() - INTERVAL '10 days'),
-    ('cccccccc-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005', 'Marc''s desktop', sha256('bbr_user_dev_marc'),  NOW() - INTERVAL '1 hour',  NULL),
-    ('cccccccc-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-000000000006', 'Heidi''s phone',  sha256('bbr_user_dev_heidi'), NOW() - INTERVAL '2 hours', NULL);
+    ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'Dave''s phone',   sha256('bbr_session_dev_dave'),  NOW() - INTERVAL '25 days', NULL),
+    ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002', 'Eve''s laptop',   sha256('bbr_session_dev_eve'),   NOW() - INTERVAL '15 days', NULL),
+    ('cccccccc-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000003', 'Old tablet',      sha256('bbr_session_dev_frank'), NOW() - INTERVAL '40 days', NOW() - INTERVAL '10 days'),
+    ('cccccccc-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005', 'Marc''s desktop', sha256('bbr_session_dev_marc'),  NOW() - INTERVAL '1 hour',  NULL),
+    ('cccccccc-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-000000000006', 'Heidi''s phone',  sha256('bbr_session_dev_heidi'), NOW() - INTERVAL '2 hours', NULL);
 
 -- -- Printer join tokens --------------------------------------
 -- token_hash is sha256('bbr_join_dev_<name>'); created_by NULL = created by the admin.

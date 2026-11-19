@@ -267,14 +267,18 @@ func (s *Service) RevokeJoinToken(ctx context.Context, printerID, tokenID uuid.U
 }
 
 func (s *Service) SignupWithJoinToken(ctx context.Context, joinToken, userName, deviceName string) (string, error) {
+	if !strings.HasPrefix(joinToken, string(token.JoinPrefix)) {
+		return "", ErrInvalidJoinToken
+	}
+
 	userName, err := validateUserName(userName)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	deviceName, err = validateDeviceName(deviceName)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	sessionToken, sessionHash := token.Generate(token.SessionPrefix)
@@ -286,7 +290,7 @@ func (s *Service) SignupWithJoinToken(ctx context.Context, joinToken, userName, 
 		SessionTokenHash: sessionHash,
 	})
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	return sessionToken, nil
