@@ -6,7 +6,7 @@ The website people use to write messages, follow them until they're printed, and
 
 | Path | Who | What |
 |---|---|---|
-| `/` | user or admin | **Write.** The receipt is the composer: pick a recipient, write, print. After sending, the circle and the four-step bar follow the message (awaiting → approved → queued → printed), polling every 3 s. |
+| `/` | user or admin | **Write.** The receipt is the composer: pick a recipient, write, print. After sending, the circle and the four-step bar follow the message (awaiting → approved → queued → printed), polling every 3 s. The draft is kept on this device until it's sent, so a reload or a trip to History doesn't lose it. |
 | `/history` | user | The user's own messages as small receipts, filterable by recipient. |
 | `/admin` | admin | Counts, a 52-week activity grid, the approval queue, printers, users and the full message log (with requeue for failed messages). Each printer and user has a **Manage** pane: ownership, quiet hours, join links, printer access, devices and recovery invites. |
 | `/join#bbr_join_…` | anyone | Signs up with a printer owner's join link (pick a name, name the device). Someone already signed in gets a "Join as *name*" confirmation instead, which adds the printer to their account. |
@@ -21,6 +21,12 @@ Settings never sit on a page: clicking your name in the header opens a pane on t
 - **Join another printer:** paste a join link to add a printer under your current name.
 
 Links and invites are shown once, with Copy and (where the browser supports it) Share.
+
+### Refreshing
+
+- Pages refresh in the background (Write every 3 s while following a message, History and Admin every 20 s), but **not while the tab is hidden**: a refresh that comes due then waits, and runs as soon as the tab is shown again.
+- When two refreshes in a row fail, the page says "Can't reach the server. Retrying…" and keeps trying; the line goes away on the next answer.
+- On `/admin`, the number of messages waiting for approval shows in the nav ("Admin · 3") and in the tab title ("(3) Admin"), so a moderator sees it from another tab.
 
 ## Sign-in
 
@@ -60,6 +66,7 @@ web/
   js/auth.js        token storage
   js/pane.js        side pane (<dialog>), copy field, confirm button
   js/printer-tools.js  quiet hours and join links, shared by owners and the admin
+  js/visibility.js  pauses background refreshes while the tab is hidden
   js/dom.js         h() element helper (never innerHTML)
   js/format.js      dates, printer state, status mapping
   js/pages/*.js     one module per page

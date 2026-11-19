@@ -6,6 +6,7 @@ import { auth } from '../auth.js';
 import { dayKey, longDate, MONTHS_SHORT, printerState, quietHoursText, seqNo, shortDate, STATUS, timeAgo } from '../format.js';
 import { confirmButton, copyField, openPane } from '../pane.js';
 import { joinLinksList, quietHoursForm } from '../printer-tools.js';
+import { whenVisible } from '../visibility.js';
 
 const REFRESH_MS = 20000;
 const WEEKS = 52;
@@ -120,6 +121,7 @@ export function adminPage(ctx) {
       stat('Printers online', String(online), { suffix: `/${st.printers.length}` }),
       stat('Printed this year', st.activity ? st.activity.year.toLocaleString('en') : '…'));
     errorEl.textContent = st.error ?? '';
+    ctx.setAdminWaiting(st.waiting.length);
   }
 
   function paintActivity() {
@@ -668,11 +670,14 @@ export function adminPage(ctx) {
   }
 
   function schedule() {
-    const t = setTimeout(async () => {
+    const t = setTimeout(() => {
       timers.delete(t);
       if (destroyed) return;
-      if (st.busy.size === 0) await loadCore();
-      if (!destroyed) schedule();
+      whenVisible(async () => {
+        if (destroyed) return;
+        if (st.busy.size === 0) await loadCore();
+        if (!destroyed) schedule();
+      });
     }, REFRESH_MS);
     timers.add(t);
   }

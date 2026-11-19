@@ -3,6 +3,7 @@
 import { fill, h, rings, shape } from '../dom.js';
 import { api, PAGE_SIZE } from '../api.js';
 import { clock, printerState, seqNo, senderStage, shortDate } from '../format.js';
+import { OFFLINE_AFTER, whenVisible } from '../visibility.js';
 
 const REFRESH_MS = 20000;
 
@@ -23,6 +24,7 @@ export function historyPage() {
     more: false,
     loading: true,
     error: null,
+    failures: 0, // background refreshes failed in a row
     filter: 'all',
   };
   const timers = new Set();
@@ -96,6 +98,7 @@ export function historyPage() {
           },
         }, label))),
       st.error && h('p', { class: 'form-error', role: 'alert' }, st.error),
+      st.failures >= OFFLINE_AFTER && h('p', { class: 'offline-line', role: 'status' }, 'Can’t reach the server. Retrying…'),
       visible.length > 0
         ? h('ol', { class: 'note-grid' }, visible.map(card))
         : !st.loading && h('div', { class: 'empty' },
@@ -137,17 +140,20 @@ export function historyPage() {
       const page = await api.userMessages({ limit: PAGE_SIZE, offset: 0 });
       if (destroyed) return;
       merge(page, { prepend: true });
+      st.failures = 0;
       paint();
     } catch {
-      // Try again on the next tick.
+      // Try again on the next tick; say so once it keeps failing.
+      st.failures += 1;
+      if (st.failures === OFFLINE_AFTER && !destroyed) paint();
     }
-    schedule();
+    if (!destroyed) schedule();
   }
 
   function schedule() {
     const t = setTimeout(() => {
       timers.delete(t);
-      if (!destroyed) refresh();
+      if (!destroyed) whenVisible(() => !destroyed && refresh());
     }, REFRESH_MS);
     timers.add(t);
   }

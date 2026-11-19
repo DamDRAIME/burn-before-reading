@@ -5,6 +5,7 @@ import { fill, h, rings } from '../dom.js';
 import { api, fetchAll } from '../api.js';
 import { readPref, writePref } from '../auth.js';
 import { printerState, receiptDate, seqNo, senderStage, TERMINAL_STATUSES } from '../format.js';
+import { OFFLINE_AFTER, whenVisible } from '../visibility.js';
 
 const MAX_LENGTH = 500;
 const POLL_MS = 3000;
@@ -63,6 +64,7 @@ export function writePage(ctx) {
     sendError: null,
     message: null, // the sent message, while tracking it
     sentTo: null,
+    pollFailures: 0, // status checks failed in a row
     idea: pickIdea(),
   };
   const timers = new Set();
@@ -71,7 +73,7 @@ export function writePage(ctx) {
   function later(fn, ms) {
     const t = setTimeout(() => {
       timers.delete(t);
-      if (!destroyed) fn();
+      if (!destroyed) whenVisible(() => !destroyed && fn());
     }, ms);
     timers.add(t);
   }
@@ -84,7 +86,10 @@ export function writePage(ctx) {
     maxlength: MAX_LENGTH,
     'aria-label': 'Message',
     placeholder: 'Start writing…',
+    // The draft survives a reload or a trip to another page (on this device).
+    value: readPref('draft') ?? '',
     onInput: () => {
+      writePref('draft', textarea.value);
       updateCount();
       updateSendButton();
     },
@@ -247,7 +252,8 @@ export function writePage(ctx) {
         })),
       h('div', { class: 'write__status' },
         h('span', { class: 'write__status-line' }, lines[s] ?? ''),
-        h('button', { type: 'button', class: 'btn btn--ghost', onClick: reset }, 'Write another')));
+        h('button', { type: 'button', class: 'btn btn--ghost', onClick: reset }, 'Write another')),
+      st.pollFailures >= OFFLINE_AFTER && h('p', { class: 'offline-line' }, 'Can’t reach the server. Retrying…'));
   }
 
   function paint() {
@@ -307,6 +313,8 @@ export function writePage(ctx) {
       st.message = message;
       st.sentTo = p;
       textarea.value = '';
+      writePref('draft', null);
+      st.pollFailures = 0;
       poll(message.id);
     } catch (err) {
       st.sendError = err.message;
@@ -322,12 +330,16 @@ export function writePage(ctx) {
       try {
         const message = asAdmin ? await api.adminMessage(id) : await api.userMessage(id);
         if (destroyed || st.message?.id !== id) return;
-        if (message.status !== st.message.status) {
+        const wasOffline = st.pollFailures >= OFFLINE_AFTER;
+        st.pollFailures = 0;
+        if (message.status !== st.message.status || wasOffline) {
           st.message = message;
           paint();
         }
       } catch {
-        // Keep the last known state and try again.
+        // Keep the last known state and try again; say so once it keeps failing.
+        st.pollFailures += 1;
+        if (st.pollFailures === OFFLINE_AFTER && !destroyed) paint();
       }
       if (st.message?.id === id && !TERMINAL_STATUSES.has(st.message.status)) poll(id);
     }, POLL_MS);

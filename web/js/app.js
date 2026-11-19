@@ -1,4 +1,4 @@
-import { h } from './dom.js';
+import { fill, h } from './dom.js';
 import { installDither } from './dither.js';
 import { api, ApiError, onUnauthorized } from './api.js';
 import { auth } from './auth.js';
@@ -68,14 +68,14 @@ async function loadSession() {
 }
 
 function nav(ctx, path) {
-  const link = (href, label) => h('a', { href, 'data-link': true, class: 'nav__link', 'aria-current': path === href ? 'page' : null }, label);
+  const link = (href, label, extra) => h('a', { href, 'data-link': true, class: 'nav__link', 'aria-current': path === href ? 'page' : null }, label, extra);
   const who = ctx.me ? ctx.me.name : ctx.isAdmin ? 'Admin' : null;
   return h('header', { class: 'site-header' },
     h('a', { href: '/', 'data-link': true, class: 'site-header__brand' }, 'Burn Before Reading'),
     (ctx.me || ctx.isAdmin) && h('nav', { class: 'nav', 'aria-label': 'Main' },
       link('/', 'Write'),
       ctx.me && link('/history', 'History'),
-      ctx.isAdmin && link('/admin', 'Admin'),
+      ctx.isAdmin && link('/admin', 'Admin', h('span', { class: 'nav__count', 'data-admin-count': true })),
       who && h(ctx.me ? 'button' : 'span', ctx.me
         ? { type: 'button', class: 'nav__who nav__who--button', 'aria-haspopup': 'dialog', title: 'Settings', onClick: () => openSettings(ctx) }
         : { class: 'nav__who' },
@@ -109,6 +109,16 @@ async function render() {
       auth.setUserToken(null);
       state.me = null;
       scheduleRender();
+    },
+    /** The admin page reports how many messages wait for approval: shown in the nav and the tab title. */
+    setAdminWaiting(n) {
+      const count = root.querySelector('[data-admin-count]');
+      if (count) {
+        fill(count, n > 0 && [` · ${n}`, h('span', { class: 'visually-hidden' }, ' waiting for approval')]);
+      }
+      if (current?.title === 'Admin' || !current) {
+        document.title = `${n > 0 ? `(${n}) ` : ''}Admin · Burn Before Reading`;
+      }
     },
     /**
      * After a change to the account (joined, left, quiet hours): reloads /me and lets
