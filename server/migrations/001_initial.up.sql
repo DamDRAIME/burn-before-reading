@@ -120,10 +120,10 @@ CREATE TABLE printer_join_tokens (
     
     token_hash BYTEA NOT NULL UNIQUE, -- Effective while the user that created it still owns the printer.
 
-    created_at TIMESTAMPZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPZ NOT NULL,
-    used_at TIMESTAMPZ,
-    revoked_at TIMESTAMPZ
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_printer_join_tokens_printer
