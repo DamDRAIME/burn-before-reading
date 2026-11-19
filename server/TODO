@@ -18,14 +18,27 @@
 ## Printer ownership
 
 - [X] `user_printers.role` (`member` / `owner`), with partial unique indexes: one owner per printer, one owned printer per user
-- [X] Owner routes under `/user/printers/{id}` behind `RequirePrinterOwner`: quiet hours (set/clear), list/invite/remove members
-- [X] Admin: `PUT /admin/users/{id}/printers` takes `printer_accesses` with roles; `PUT /admin/users/{id}/printers/{printerID}/owner` upserts (promotes an existing member)
+- [X] Owner routes under `/user/printers/{id}` behind `RequirePrinterOwner`: quiet hours (set/clear), list/remove members, join tokens
+- [X] Admin: `PUT /admin/users/{id}/printers` takes `printer_accesses` with roles
 - [X] Map ownership constraint violations to 409 and unknown printers to 400 (`mapUserPrinterError`)
-- [X] Removing a user's last printer revokes their sessions and clears their invite (`revokeAccessIfNoPrinters`, used by `RemoveMember` and `SetPrinters`)
+- [X] Removing a user's last printer revokes their sessions and clears their invite (`revokeAccessIfNoPrinters`, used by every removal path)
 - [X] Removing a member rejects their `pending` / `awaiting_approval` messages to that printer
-- [ ] `SetPrinters` doesn't reject queued messages for the printers it removes (`RemoveMember` does)
-- [ ] Let users add their own devices: `POST /user/invite` (own session token) returns a fresh invite for the caller, to claim on another device (e.g. as a QR code). Reuse `users.Service.ReissueInvite` with the user ID from the session; send `Cache-Control: no-store`. Existing sessions are kept
-- [ ] Ownership transfer takes two admin calls (demote with `SetPrinters`, then `SetOwner`); consider a single transfer route, and a way to remove an owner without rewriting all of their links
+- [X] `SetPrinters` rejects queued messages for the printers it removes, like `RemoveMember` (shared `rejectQueuedMessages`)
+- [X] Let users add their own devices: `POST /user/invite` returns a 15-minute invite for the caller (user ID from the session only); existing sessions are kept
+- [X] Ownership transfer in one call: `PUT /admin/printers/{id}/owner {user_id}` (demotes the previous owner); `DELETE /admin/printers/{id}/owner?keep_as_member=` removes an owner without rewriting their other links. Replaces `PUT /admin/users/{id}/printers/{printerID}/owner`
+
+## User lifecycle (join tokens)
+
+- [X] Owners no longer create accounts (`POST /user/printers/{id}/members` removed): they hand out single-use, 2-day join tokens (`printer_join_tokens`). Owners never hold a credential for someone else's account
+- [X] `POST /users/join` signs up a new account with a join token (401 if unusable); `POST /user/memberships` adds an existing account to the token's printer (400 if unusable, since the session is fine)
+- [X] An owner's join token only works while they own the printer; losing ownership revokes their pending tokens (`revokeStaleJoinTokens`)
+- [X] Names are unique per printer, case-insensitive (`ensureNameFreeOnPrinters`, under `lockPrinters`); not globally, to avoid name probing and squatting
+- [X] Users list and revoke their own sessions (`GET /user/sessions` with `current`, `DELETE /user/sessions/{id}`), and leave a printer (`DELETE /user/memberships/{printerID}`, 409 for the owner)
+- [X] Admin invite reissue is account recovery: revokes all sessions unless `{"keep_sessions": true}`; 409 for a user with no printer
+- [ ] Rate-limit the unauthenticated `POST /users/join` and `POST /users/claim` per IP (tokens are 130-bit, so this is about abuse, not guessing)
+- [ ] Dormant accounts (no printer left) accumulate: an admin route to delete accounts, and an admin view of join tokens across printers
+- [ ] Renaming accounts: must run the per-printer name check on all of the user's printers
+- [ ] Add `httptest` tests for the users handlers (the lifecycle was checked end to end with curl against a seeded database)
 
 ## Approval flow
 
@@ -83,7 +96,7 @@
 - [X] Reject invalid `limit` / `offset` with 400 instead of silently ignoring or capping them
 - [X] Consistent status codes for users: unknown printer in a body → 400, unknown user in the URL → 404 (sessions list / revoke all included), `printer_ids` required on PUT
 - [X] User handlers return 500 (like printer handlers) when the user ID is missing from the context
-- [ ] Run `gofmt` on `internal/web/auth.go` and `internal/web/mappers.go`
+- [X] Run `gofmt` on `internal/web/auth.go` and `internal/web/mappers.go`
 - [ ] Add tests for the service layer using a fake Store (start with `printers.Service.Authenticate`: valid token, unknown token → ErrInvalidToken, store error passed through)
 - [ ] Add `httptest` tests for `RequirePrinterToken` and `RequireUserToken` with fake authenticators, including the 500 path (not covered by the manual curl tests)
 - [X] Fill in the README "Server" section (replaced by the API reference and database diagram)
