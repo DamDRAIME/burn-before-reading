@@ -1,6 +1,10 @@
 package users
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+
+	"bbr/internal/validate"
+)
 
 func deconflictPrinterAccesses(printerAccesses []PrinterAccess) ([]PrinterAccess, error) {
 	seen := make(map[uuid.UUID]Role, len(printerAccesses))
@@ -16,4 +20,12 @@ func deconflictPrinterAccesses(printerAccesses []PrinterAccess) ([]PrinterAccess
 		dedupedPrinterAccesses = append(dedupedPrinterAccesses, pa)
 	}
 	return dedupedPrinterAccesses, nil
+}
+
+func validateUserName(name string) (string, error) {
+	return validate.RequiredString(name, MaxUserNameLength, ErrEmptyUserName, ErrUserNameTooLong, false)
+}
+
+func validateDeviceName(name string) (string, error) {
+	return validate.RequiredString(name, MaxDeviceNameLength, ErrEmptyDeviceName, ErrDeviceNameTooLong, false)
 }

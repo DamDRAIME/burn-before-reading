@@ -108,13 +108,34 @@ CREATE TABLE user_sessions (
     revoked_at TIMESTAMPTZ
 );
 
+-- Printer Join Tokens Table
+
+CREATE TABLE printer_join_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    printer_id UUID NOT NULL REFERENCES printer(id) ON DELETE CASCADE,
+
+    created_by UUID REFERENCES users(id) ON DELETE CASCADE, -- NULL for tokens created by Admin
+    used_by UUID REFERENCES users(id) ON DELETE SET NULL,
+
+    
+    token_hash BYTEA NOT NULL UNIQUE, -- Effective while the user that created it still owns the printer.
+
+    created_at TIMESTAMPZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPZ NOT NULL,
+    used_at TIMESTAMPZ,
+    revoked_at TIMESTAMPZ
+);
+
+CREATE INDEX idx_printer_join_tokens_printer
+    ON printer_join_tokens (printer_id, created_at DESC);
+
 -- Messages Table
 
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sequence_number BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
 
-    sender_id UUID REFERENCES users(id), -- NULL for admin messages
+    sender_id UUID REFERENCES users(id), -- NULL for messages created by Admin
     sender_ip INET NOT NULL,
     source VARCHAR(20) NOT NULL DEFAULT 'web',
 

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	
+
 	"github.com/google/uuid"
 
 	"bbr/internal/printers"
@@ -68,7 +68,6 @@ func printerIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 	return printerID, ok
 }
 
-
 // -- User --
 
 type userAuthenticator interface {
@@ -88,7 +87,7 @@ func RequireUserToken(auth userAuthenticator, logger *slog.Logger) func(http.Han
 				return
 			}
 			userID, sessionID, err := auth.Authenticate(r.Context(), token)
-			if errors.Is(err, users.ErrInvalidToken) {
+			if errors.Is(err, users.ErrInvalidSessionToken) {
 				writeErrorResponse(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
