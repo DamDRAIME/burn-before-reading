@@ -1,9 +1,11 @@
 // Admin console: numbers, a year of printing, the approval queue, printers and the full log.
 
 import { fill, h, rings, shape } from '../dom.js';
-import { api, ApiError, fetchAll, PAGE_SIZE } from '../api.js';
+import { api, ApiError, fetchAll, joinLink, PAGE_SIZE } from '../api.js';
 import { auth } from '../auth.js';
-import { dayKey, longDate, MONTHS_SHORT, printerState, quietHoursText, seqNo, STATUS, timeAgo } from '../format.js';
+import { dayKey, longDate, MONTHS_SHORT, printerState, quietHoursText, seqNo, shortDate, STATUS, timeAgo } from '../format.js';
+import { confirmButton, copyField, openPane } from '../pane.js';
+import { joinLinksList, quietHoursForm } from '../printer-tools.js';
 
 const REFRESH_MS = 20000;
 const WEEKS = 52;
@@ -41,6 +43,7 @@ function activityGrid(today) {
 export function adminPage(ctx) {
   const st = {
     printers: [],
+    users: [],
     waiting: [],
     queueCount: null,
     activity: null, // { counts: Map(dayKey → n), total, year }
@@ -67,6 +70,7 @@ export function adminPage(ctx) {
   const activityEl = h('section', { id: 'activity', class: 'admin-section', 'aria-labelledby': 'activity-h' });
   const queueEl = h('section', { id: 'queue', class: 'admin-section', 'aria-labelledby': 'queue-h' });
   const printersEl = h('section', { id: 'printers', class: 'admin-section', 'aria-labelledby': 'printers-h' });
+  const usersEl = h('section', { id: 'users', class: 'admin-section', 'aria-labelledby': 'users-h' });
   const logEl = h('section', { id: 'log', class: 'admin-section', 'aria-labelledby': 'log-h' });
   const errorEl = h('p', { class: 'form-error', role: 'alert' });
 
@@ -83,6 +87,7 @@ export function adminPage(ctx) {
           h('a', { href: '#activity' }, 'Activity'),
           h('a', { href: '#queue' }, 'Approvals'),
           h('a', { href: '#printers' }, 'Printers'),
+          h('a', { href: '#users' }, 'Users'),
           h('a', { href: '#log' }, 'All messages'),
           h('button', {
             type: 'button',
@@ -98,6 +103,7 @@ export function adminPage(ctx) {
     activityEl,
     queueEl,
     printersEl,
+    usersEl,
     logEl);
 
   function stat(label, value, { accent = false, suffix = null } = {}) {
@@ -210,7 +216,9 @@ export function adminPage(ctx) {
               h('span', { class: 'strong' }, `${state.label} · ${p.last_heartbeat_at ? `seen ${timeAgo(p.last_heartbeat_at)}` : 'never seen'}`),
               h('span', null, p.model),
               h('span', null, quietHoursText(p)),
-              p.error && h('span', { class: 'printer-card__error' }, `ERROR: ${p.error.toUpperCase()}`)));
+              h('span', null, ownerOf(p.id) ? `Owner: ${ownerOf(p.id).name}` : 'No owner'),
+              p.error && h('span', { class: 'printer-card__error' }, `ERROR: ${p.error.toUpperCase()}`),
+              h('button', { type: 'button', class: 'btn btn--outline btn--sm printer-card__manage', 'aria-haspopup': 'dialog', onClick: () => openPrinterPane(p) }, 'Manage')));
         })));
   }
 
@@ -264,6 +272,320 @@ export function adminPage(ctx) {
         h('button', { type: 'button', class: 'btn btn--outline btn--sm', disabled: !st.rowsMore || st.rowsLoading, onClick: () => { st.page += 1; loadRows(); } }, 'Older →')));
   }
 
+  // -- Users and ownership (management opens in panes) --
+
+  const ownerOf = (pid) => st.users.find((u) => u.printer_accesses.some((a) => a.printer_id === pid && a.role === 'owner'));
+  const peopleOn = (pid) => st.users.filter((u) => u.printer_accesses.some((a) => a.printer_id === pid));
+  const ownedBy = (u) => u.printer_accesses.find((a) => a.role === 'owner');
+
+  function accessesText(u) {
+    if (u.printer_accesses.length === 0) return [h('span', { class: 'muted' }, 'No printer')];
+    return u.printer_accesses.map((a, i) => [
+      i > 0 && ', ',
+      toName(a.printer_id),
+      a.role === 'owner' && h('span', { class: 'tag tag--accent' }, 'Owner'),
+    ]);
+  }
+
+  function paintUsers() {
+    fill(usersEl,
+      h('div', { class: 'section-head' },
+        h('div', { class: 'page-head__title' },
+          h('h2', { id: 'users-h', class: 'section-title' }, 'Users'),
+          h('span', { class: 'muted small' }, `${st.users.length} · most join with a link from a printer’s owner`)),
+        h('button', { type: 'button', class: 'btn btn--outline btn--sm', 'aria-haspopup': 'dialog', onClick: openNewUserPane }, 'New user')),
+      st.users.length === 0
+        ? h('div', { class: 'empty' }, h('span', { class: 'empty__title' }, 'No users yet.'), h('span', { class: 'muted' }, 'Hand out a join link from a printer’s Manage pane.'))
+        : h('div', { class: 'table-wrap' },
+          h('table', { class: 'log log--users' },
+            h('thead', null, h('tr', null,
+              h('th', { scope: 'col' }, 'Name'),
+              h('th', { scope: 'col' }, 'Printers'),
+              h('th', { scope: 'col' }, 'Added'),
+              h('th', { scope: 'col' }, h('span', { class: 'visually-hidden' }, 'Actions')))),
+            h('tbody', null, st.users.map((u) => h('tr', null,
+              h('td', { class: 'strong nowrap' }, u.name),
+              h('td', null, accessesText(u)),
+              h('td', { class: 'nowrap muted' }, shortDate(u.created_at)),
+              h('td', { class: 'log__actions' },
+                h('button', { type: 'button', class: 'btn btn--outline btn--sm', 'aria-haspopup': 'dialog', onClick: () => openUserPane(u) }, 'Manage'))))))));
+  }
+
+  function paneSection(title, ...children) {
+    return h('section', { class: 'pane-section' }, h('h3', { class: 'pane-section__title' }, title), ...children);
+  }
+
+  /** One printer: who owns it, who's on it, quiet hours and join links. */
+  function openPrinterPane(printer) {
+    const ownerEl = h('div');
+    let ownerError = '';
+
+    function paintOwner() {
+      const owner = ownerOf(printer.id);
+      const people = peopleOn(printer.id);
+      const select = h('select', { id: 'owner-select', class: 'input' },
+        h('option', { value: '' }, 'Choose someone…'),
+        st.users
+          .filter((u) => u.id !== owner?.id)
+          .map((u) => {
+            const owns = ownedBy(u);
+            return h('option', { value: u.id, disabled: Boolean(owns) }, owns ? `${u.name} (owns ${toName(owns.printer_id)})` : u.name);
+          }));
+      const keep = h('input', { type: 'checkbox', id: 'keep-member', checked: true });
+
+      async function transfer(event) {
+        event.preventDefault();
+        if (!select.value) return;
+        ownerError = '';
+        try {
+          await api.adminSetOwner(printer.id, select.value);
+          await loadCore();
+        } catch (err) {
+          ownerError = err.message;
+        }
+        paintOwner();
+      }
+
+      fill(ownerEl, paneSection('Owner',
+        h('p', { class: 'tool__lede' }, owner
+          ? `${owner.name} owns this printer: they set its quiet hours, hand out join links and remove people.`
+          : 'Nobody owns this printer. An owner sets its quiet hours, hands out join links and removes people.'),
+        h('form', { class: 'tool__form', onSubmit: transfer },
+          h('div', { class: 'field' },
+            h('label', { class: 'field__label', for: 'owner-select' }, owner ? 'Hand it to' : 'Make owner'),
+            select,
+            h('span', { class: 'field__hint' }, owner ? `${owner.name} stays on as a member. ` : '', 'Someone not on this printer is added to it.')),
+          h('div', { class: 'tool__actions' },
+            h('button', { type: 'submit', class: 'btn btn--solid btn--sm' }, owner ? 'Transfer' : 'Make owner'))),
+        owner && h('div', { class: 'tool__actions' },
+          h('label', { class: 'check' }, keep, `Keep ${owner.name} as a member`),
+          confirmButton('Remove owner', {
+            question: 'Remove the owner?',
+            run: async () => {
+              await api.adminRemoveOwner(printer.id, keep.checked);
+              await loadCore();
+              paintOwner();
+            },
+            onError: (err) => {
+              ownerError = err.message;
+              paintOwner();
+            },
+          })),
+        h('p', { class: 'form-error', role: 'alert' }, ownerError),
+        h('p', { class: 'muted small' }, people.length
+          ? `On this printer: ${people.map((u) => u.name).join(', ')}.`
+          : 'Nobody is on this printer yet.')));
+    }
+
+    openPane({
+      title: printer.recipient_name,
+      render(body) {
+        fill(body,
+          ownerEl,
+          paneSection('Quiet hours', quietHoursForm(printer, {
+            save: (b) => api.adminSetQuietHours(printer.id, b),
+            clear: () => api.adminClearQuietHours(printer.id),
+            onSaved: () => loadCore(),
+          })),
+          paneSection('Join links', joinLinksList({
+            list: () => api.adminJoinTokens(printer.id),
+            create: () => api.adminCreateJoinToken(printer.id),
+            revoke: (tokenId) => api.adminRevokeJoinToken(printer.id, tokenId),
+          })));
+        paintOwner();
+      },
+    });
+  }
+
+  /** Checkboxes, one per printer, each with a role. Returns { el, value() }. */
+  function accessPicker(accesses, { roles = true } = {}) {
+    const chosen = new Map(accesses.map((a) => [a.printer_id, a.role]));
+    const el = h('ul', { class: 'row-list' }, st.printers.map((p) => {
+      const box = h('input', { type: 'checkbox', id: `acc-${p.id}`, checked: chosen.has(p.id) });
+      const role = roles && h('select', { class: 'input input--sm', 'aria-label': `Role on ${p.recipient_name}`, disabled: !chosen.has(p.id) },
+        h('option', { value: 'member' }, 'Member'),
+        h('option', { value: 'owner' }, 'Owner'));
+      if (role) role.value = chosen.get(p.id) ?? 'member';
+      box.addEventListener('change', () => {
+        if (box.checked) chosen.set(p.id, role ? role.value : 'member');
+        else chosen.delete(p.id);
+        if (role) role.disabled = !box.checked;
+      }); // ...then the change bubbles up to listeners on the list
+      if (role) role.addEventListener('change', () => chosen.set(p.id, role.value));
+      return h('li', { class: 'row-list__item' },
+        h('label', { class: 'check', for: box.id }, box, p.recipient_name),
+        role);
+    }));
+    return { el, value: () => [...chosen].map(([printer_id, role]) => ({ printer_id, role })) };
+  }
+
+  /** One user: their printers and roles, their devices, and a recovery invite. */
+  function openUserPane(user) {
+    let u = user;
+    const accessEl = h('div');
+    const devicesEl = h('div');
+    const recoveryEl = h('div');
+    const dev = { sessions: null, error: '' };
+    const rec = { invite: null, error: '' };
+
+    function paintAccess(error = '', saved = '') {
+      const picker = accessPicker(u.printer_accesses);
+      const warn = h('p', { class: 'notice', hidden: true }, `With no printer, ${u.name} is signed out everywhere and their invite stops working. Their history is kept.`);
+      picker.el.addEventListener('change', () => {
+        warn.hidden = picker.value().length > 0;
+      });
+      const submit = h('button', { type: 'submit', class: 'btn btn--solid btn--sm' }, 'Save');
+
+      async function onSubmit(event) {
+        event.preventDefault();
+        submit.disabled = true;
+        try {
+          u = await api.adminSetUserPrinters(u.id, picker.value());
+          await loadCore();
+          paintAccess('', 'Saved.');
+          loadSessions();
+        } catch (err) {
+          paintAccess(err.message);
+        }
+      }
+
+      fill(accessEl, paneSection('Printers',
+        h('form', { class: 'tool__form', onSubmit },
+          h('p', { class: 'tool__lede' }, 'Removing a printer drops their queued messages to it. A printer has one owner, and someone owns at most one printer.'),
+          picker.el,
+          warn,
+          h('div', { class: 'tool__actions' }, submit, saved && h('span', { class: 'muted small', role: 'status' }, saved)),
+          h('p', { class: 'form-error', role: 'alert' }, error))));
+    }
+
+    async function loadSessions() {
+      try {
+        dev.sessions = await api.adminUserSessions(u.id);
+        dev.error = '';
+      } catch (err) {
+        dev.error = err.message;
+      }
+      paintDevices();
+    }
+
+    function paintDevices() {
+      const active = (dev.sessions ?? []).filter((s) => !s.revoked_at);
+      const onError = (err) => {
+        dev.error = err.message;
+        paintDevices();
+      };
+      fill(devicesEl, paneSection('Devices',
+        dev.sessions == null
+          ? !dev.error && h('p', { class: 'muted small' }, 'Loading…')
+          : active.length === 0
+            ? h('p', { class: 'muted small' }, 'Not signed in anywhere.')
+            : h('ul', { class: 'row-list' }, active.map((s) => h('li', { class: 'row-list__item' },
+              h('div', { class: 'row-list__main' },
+                h('span', { class: 'strong' }, s.device_name),
+                h('span', { class: 'row-list__meta' }, `Added ${shortDate(s.created_at)} · used ${timeAgo(s.last_used_at)}`)),
+              confirmButton('Revoke', {
+                question: 'Sign it out?',
+                run: async () => {
+                  await api.adminRevokeSession(u.id, s.id);
+                  await loadSessions();
+                },
+                onError,
+              })))),
+        active.length > 1 && h('div', { class: 'tool__actions' },
+          confirmButton('Sign out everywhere', {
+            question: `Sign ${u.name} out of every device?`,
+            yes: 'Sign out all',
+            run: async () => {
+              await api.adminRevokeAllSessions(u.id);
+              await loadSessions();
+            },
+            onError,
+          })),
+        h('p', { class: 'form-error', role: 'alert' }, dev.error)));
+    }
+
+    function paintRecovery() {
+      const revoke = h('input', { type: 'checkbox', id: 'rec-revoke', checked: true });
+      const submit = h('button', { type: 'button', class: 'btn btn--outline btn--sm' }, rec.invite ? 'New invite' : 'Create invite');
+      submit.addEventListener('click', async () => {
+        submit.disabled = true;
+        rec.error = '';
+        try {
+          rec.invite = await api.adminRecoveryInvite(u.id, revoke.checked);
+          if (revoke.checked) loadSessions();
+        } catch (err) {
+          rec.error = err instanceof ApiError && err.status === 409
+            ? `${u.name} isn’t on any printer. Give them one first.`
+            : err.message;
+        }
+        paintRecovery();
+      });
+
+      fill(recoveryEl, paneSection('Recovery',
+        h('p', { class: 'tool__lede' }, `For when ${u.name} has lost every device. The invite signs one device in as them and lasts 2 days. A new one replaces the last.`),
+        rec.invite && copyField(joinLink(rec.invite.invite), { label: 'Recovery invite', expiresAt: rec.invite.expires_at, note: `Send it to ${u.name} only. It’s shown only now.` }),
+        h('div', { class: 'tool__actions' },
+          h('label', { class: 'check' }, revoke, 'Also sign out their devices'),
+          submit),
+        h('p', { class: 'form-error', role: 'alert' }, rec.error)));
+    }
+
+    openPane({
+      title: u.name,
+      render(body) {
+        fill(body, accessEl, devicesEl, recoveryEl);
+        paintAccess();
+        paintDevices();
+        paintRecovery();
+        loadSessions();
+      },
+    });
+  }
+
+  /** The admin's own way in: name an account, pick its printers, hand over the invite. */
+  function openNewUserPane() {
+    openPane({
+      title: 'New user',
+      render(body) {
+        const name = h('input', { id: 'new-user-name', class: 'input', type: 'text', maxlength: 20, required: true, autocomplete: 'off' });
+        const picker = accessPicker([], { roles: false });
+        const error = h('p', { class: 'form-error', role: 'alert' });
+        const submit = h('button', { type: 'submit', class: 'btn btn--solid btn--sm' }, 'Create');
+
+        async function onSubmit(event) {
+          event.preventDefault();
+          const username = name.value.trim();
+          if (!username) return;
+          submit.disabled = true;
+          error.textContent = '';
+          try {
+            const created = await api.adminCreateUser(username, picker.value().map((a) => a.printer_id));
+            await loadCore();
+            fill(body,
+              paneSection(`${created.name} is ready`,
+                copyField(joinLink(created.invite), { label: 'Invite', note: `Send it to ${created.name}. It works once, for 2 days, and is shown only now.` })));
+          } catch (err) {
+            error.textContent = err.message;
+            submit.disabled = false;
+          }
+        }
+
+        fill(body, h('form', { class: 'tool__form', onSubmit },
+          h('p', { class: 'tool__lede' }, 'Usually a printer’s owner sends a join link instead, and people pick their own name. Use this when someone can’t.'),
+          h('div', { class: 'field' },
+            h('label', { class: 'field__label', for: 'new-user-name' }, 'Name'),
+            name,
+            h('span', { class: 'field__hint' }, 'Printed on their messages. Must be unique on each of their printers.')),
+          h('div', { class: 'field' },
+            h('span', { class: 'field__label' }, 'Printers'),
+            picker.el),
+          h('div', { class: 'tool__actions' }, submit),
+          error));
+        name.focus();
+      },
+    });
+  }
+
   // -- Loading --
 
   async function loadRows() {
@@ -287,13 +609,15 @@ export function adminPage(ctx) {
 
   async function loadCore() {
     try {
-      const [printers, waiting, queue] = await Promise.all([
+      const [printers, users, waiting, queue] = await Promise.all([
         fetchAll(api.adminPrinters),
+        fetchAll(api.adminUsers),
         fetchAll(api.adminMessages, { status: 'awaiting_approval', order: 'asc' }),
         fetchAll(api.adminMessages, { status: 'pending,claimed,processed' }),
       ]);
       if (destroyed) return;
       st.printers = printers;
+      st.users = users;
       st.waiting = waiting;
       st.queueCount = queue.length;
       st.error = null;
@@ -304,6 +628,7 @@ export function adminPage(ctx) {
     paintStats();
     paintQueue();
     paintPrinters();
+    paintUsers();
     await loadRows();
   }
 
@@ -356,6 +681,7 @@ export function adminPage(ctx) {
   paintActivity();
   paintQueue();
   paintPrinters();
+  paintUsers();
   paintLog();
   loadCore().then(() => {
     if (!destroyed) schedule();

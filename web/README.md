@@ -8,12 +8,25 @@ The website people use to write messages, follow them until they're printed, and
 |---|---|---|
 | `/` | user or admin | **Write.** The receipt is the composer: pick a recipient, write, print. After sending, the circle and the four-step bar follow the message (awaiting → approved → queued → printed), polling every 3 s. |
 | `/history` | user | The user's own messages as small receipts, filterable by recipient. |
-| `/admin` | admin | Counts, a 52-week activity grid, the approval queue, printer status and the full message log (with requeue for failed messages). |
-| `/join#bbr_invite_…` | anyone | Claims an invite for this device. The same form shows on `/` when nobody is signed in. |
+| `/admin` | admin | Counts, a 52-week activity grid, the approval queue, printers, users and the full message log (with requeue for failed messages). Each printer and user has a **Manage** pane: ownership, quiet hours, join links, printer access, devices and recovery invites. |
+| `/join#bbr_join_…` | anyone | Signs up with a printer owner's join link (pick a name, name the device). Someone already signed in gets a "Join as *name*" confirmation instead, which adds the printer to their account. |
+| `/join#bbr_invite_…` | anyone | Claims an invite (from the admin, or a device invite from your own account) for this device. The same form shows on `/` when nobody is signed in, and accepts either kind of code. |
+
+### Settings
+
+Settings never sit on a page: clicking your name in the header opens a pane on the right (a modal `<dialog>`; Esc or a click outside closes it).
+
+- **Printers:** the ones you can write to, with **Leave** (leaving your only printer signs you out everywhere, so it says so first). On the printer you own, **Manage this printer** unfolds quiet hours, members (with **Remove**) and join links (create, copy or share, revoke).
+- **Your devices:** every signed-in device, **Remove** for the others, **Sign out** for this one, and **Add a device**, which shows a 15-minute device invite link.
+- **Join another printer:** paste a join link to add a printer under your current name.
+
+Links and invites are shown once, with Copy and (where the browser supports it) Share.
 
 ## Sign-in
 
-- **Users** open the invite link an admin sent them (`/join#bbr_invite_…`), name the device and get a session token. The invite is in the URL fragment, so it's never sent to the server in a request line or logged, and the page removes it from the address bar.
+- **New users** open the join link a printer's owner sent them (`/join#bbr_join_…`), pick their name and name the device, and get a session token. The admin can also create an account and send an invite (`/join#bbr_invite_…`), which only asks for a device name.
+- **More devices:** a signed-in user creates a device invite in Settings and opens it on the other device.
+- Codes travel in the URL fragment, so they're never sent to the server in a request line or logged, and the page removes them from the address bar.
 - **Admins** sign in on `/admin` with the server's `ADMIN_TOKEN`. A "Sign out" link there forgets it.
 - Both tokens are kept in `localStorage` and sent as `Authorization: Bearer`. A `401` forgets the token and shows the sign-in again. When the server sets the session cookie described in `SCRATCHPAD.md`, the user token can stop living in `localStorage`.
 - With an admin token, **Write** sends through `POST /admin/messages`: it skips moderation and the receipt is signed `ADMIN` (admin messages have no sender).
@@ -28,10 +41,10 @@ WEB_DIR=../web ADMIN_TOKEN=mytoken go run .
 
 Then open http://localhost:8080. In the devcontainer, `web/` is mounted at `/web` and `WEB_DIR` is already set (rebuild the container once after pulling this change).
 
-With the seed data, paste `bbr_invite_dev_grace` on the join form, or put a dev session straight into the browser console:
+With the seed data, open `/join#bbr_join_dev_marc` to sign up with a join link, paste `bbr_invite_dev_grace` on the join form, or put a dev session straight into the browser console (Dave owns the printer "Alice and Dave"):
 
 ```js
-localStorage.setItem('bbr.userToken', 'bbr_user_dev_dave'); location.reload();
+localStorage.setItem('bbr.userToken', 'bbr_session_dev_dave'); location.reload();
 ```
 
 In production, any reverse proxy works as long as `/api/v1/` reaches the API and everything else serves `web/` (falling back to `index.html` for `/history`, `/admin` and `/join`).
@@ -45,6 +58,8 @@ web/
   js/app.js         router, session, nav
   js/api.js         fetch wrapper, endpoints, pagination helper
   js/auth.js        token storage
+  js/pane.js        side pane (<dialog>), copy field, confirm button
+  js/printer-tools.js  quiet hours and join links, shared by owners and the admin
   js/dom.js         h() element helper (never innerHTML)
   js/format.js      dates, printer state, status mapping
   js/pages/*.js     one module per page
@@ -54,4 +69,5 @@ web/
 
 - List routes return 10 items per page, so the admin counts and the activity grid walk pages: the grid fetches every printed message from the last year. A stats endpoint (counts per status, printed per day) would replace that.
 - History can't filter by recipient on the server, so the filter applies to the pages loaded so far.
-- There's no user or printer management UI yet (creating users, invites, sessions, quiet hours): use the API directly.
+- Accounts can't be renamed or deleted (the API doesn't support it yet), and printers are still created and renamed through the API.
+- Device invites and join links are shown as links, not QR codes.

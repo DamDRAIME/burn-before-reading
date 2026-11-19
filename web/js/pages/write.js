@@ -204,7 +204,7 @@ export function writePage(ctx) {
     if (state?.kind === 'asleep') hint = `${p.recipient_name}’s printer is asleep until ${p.quiet_end}. It’ll print then.`;
     else if (state?.kind === 'offline') hint = `${p.recipient_name}’s printer is offline. It’ll print when it’s back.`;
     if (st.printers && st.printers.length === 0) {
-      hint = asAdmin ? 'There are no printers yet.' : 'You can’t send to anyone yet. Ask the admin to link you to a printer.';
+      hint = asAdmin ? 'There are no printers yet.' : 'You can’t send to anyone yet. Ask a printer’s owner for a join link.';
     }
 
     sendButton = h('button', { type: 'button', class: 'btn btn--solid btn--lg', onClick: send },
@@ -277,7 +277,7 @@ export function writePage(ctx) {
 
   // -- Actions --
 
-  async function loadPrinters() {
+  async function fetchPrinters() {
     try {
       st.printers = asAdmin ? await fetchAll(api.adminPrinters) : await api.userPrinters();
       st.printersError = null;
@@ -287,7 +287,11 @@ export function writePage(ctx) {
     if (destroyed) return;
     if (st.sentTo) st.sentTo = st.printers?.find((p) => p.id === st.sentTo.id) ?? st.sentTo;
     paint();
-    later(loadPrinters, PRINTERS_REFRESH_MS);
+  }
+
+  async function loadPrinters() {
+    await fetchPrinters();
+    if (!destroyed) later(loadPrinters, PRINTERS_REFRESH_MS);
   }
 
   async function send() {
@@ -350,6 +354,8 @@ export function writePage(ctx) {
   return {
     el,
     title: 'Write',
+    // Joined or left a printer, or changed quiet hours, from Settings.
+    meChanged: fetchPrinters,
     destroy() {
       destroyed = true;
       timers.forEach(clearTimeout);

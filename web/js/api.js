@@ -73,6 +73,7 @@ const id = (value) => encodeURIComponent(value);
 export const api = {
   // Public
   claim: (invite, deviceName) => request(null, 'POST', '/users/claim', { body: { invite, device_name: deviceName } }),
+  join: (joinToken, username, deviceName) => request(null, 'POST', '/users/join', { body: { join_token: joinToken, username, device_name: deviceName } }),
 
   // User session
   me: () => request('user', 'GET', '/user/me'),
@@ -80,6 +81,20 @@ export const api = {
   userMessages: (query) => request('user', 'GET', '/user/messages', { query }),
   userMessage: (messageId) => request('user', 'GET', `/user/messages/${id(messageId)}`),
   sendAsUser: (printerId, content) => request('user', 'POST', '/user/messages', { body: { printer_id: printerId, content } }),
+  myInvite: () => request('user', 'POST', '/user/invite'),
+  mySessions: () => request('user', 'GET', '/user/sessions'),
+  revokeMySession: (sessionId) => request('user', 'DELETE', `/user/sessions/${id(sessionId)}`),
+  redeemJoin: (joinToken) => request('user', 'POST', '/user/memberships', { body: { join_token: joinToken } }),
+  leavePrinter: (printerId) => request('user', 'DELETE', `/user/memberships/${id(printerId)}`),
+
+  // Printer owner (user session, on the printer they own)
+  ownerSetQuietHours: (printerId, body) => request('user', 'PUT', `/user/printers/${id(printerId)}/quiet_hours`, { body }),
+  ownerClearQuietHours: (printerId) => request('user', 'DELETE', `/user/printers/${id(printerId)}/quiet_hours`),
+  ownerMembers: (printerId) => request('user', 'GET', `/user/printers/${id(printerId)}/members`),
+  ownerRemoveMember: (printerId, userId) => request('user', 'DELETE', `/user/printers/${id(printerId)}/members/${id(userId)}`),
+  ownerJoinTokens: (printerId, query) => request('user', 'GET', `/user/printers/${id(printerId)}/join_tokens`, { query }),
+  ownerCreateJoinToken: (printerId) => request('user', 'POST', `/user/printers/${id(printerId)}/join_tokens`),
+  ownerRevokeJoinToken: (printerId, tokenId) => request('user', 'DELETE', `/user/printers/${id(printerId)}/join_tokens/${id(tokenId)}`),
 
   // Admin
   checkAdminToken: (token) => request('admin', 'GET', '/admin/printers', { token, quiet: true, query: { limit: 1 } }),
@@ -90,7 +105,38 @@ export const api = {
   approve: (messageId) => request('admin', 'PATCH', `/admin/messages/${id(messageId)}/approve`),
   reject: (messageId) => request('admin', 'PATCH', `/admin/messages/${id(messageId)}/reject`),
   requeue: (messageId) => request('admin', 'PATCH', `/admin/messages/${id(messageId)}/requeue`),
+  adminSetQuietHours: (printerId, body) => request('admin', 'PUT', `/admin/printers/${id(printerId)}/quiet_hours`, { body }),
+  adminClearQuietHours: (printerId) => request('admin', 'DELETE', `/admin/printers/${id(printerId)}/quiet_hours`),
+  adminSetOwner: (printerId, userId) => request('admin', 'PUT', `/admin/printers/${id(printerId)}/owner`, { body: { user_id: userId } }),
+  adminRemoveOwner: (printerId, keepAsMember) => request('admin', 'DELETE', `/admin/printers/${id(printerId)}/owner`, { query: { keep_as_member: keepAsMember } }),
+  adminJoinTokens: (printerId, query) => request('admin', 'GET', `/admin/printers/${id(printerId)}/join_tokens`, { query }),
+  adminCreateJoinToken: (printerId) => request('admin', 'POST', `/admin/printers/${id(printerId)}/join_tokens`),
+  adminRevokeJoinToken: (printerId, tokenId) => request('admin', 'DELETE', `/admin/printers/${id(printerId)}/join_tokens/${id(tokenId)}`),
+  adminUsers: (query) => request('admin', 'GET', '/admin/users', { query }),
+  adminUser: (userId) => request('admin', 'GET', `/admin/users/${id(userId)}`),
+  adminCreateUser: (username, printerIds) => request('admin', 'POST', '/admin/users', { body: { username, printer_ids: printerIds } }),
+  adminSetUserPrinters: (userId, accesses) => request('admin', 'PUT', `/admin/users/${id(userId)}/printers`, { body: { printer_accesses: accesses } }),
+  adminRecoveryInvite: (userId, revokeSessions) => request('admin', 'POST', `/admin/users/${id(userId)}/invite`, { body: { revoke_sessions: revokeSessions } }),
+  adminUserSessions: (userId) => request('admin', 'GET', `/admin/users/${id(userId)}/sessions`),
+  adminRevokeSession: (userId, sessionId) => request('admin', 'DELETE', `/admin/users/${id(userId)}/sessions/${id(sessionId)}`),
+  adminRevokeAllSessions: (userId) => request('admin', 'DELETE', `/admin/users/${id(userId)}/sessions`),
 };
+
+const CODE_PATTERN = /bbr_(invite|join)_[A-Za-z0-9_-]+/;
+
+/**
+ * Finds an invite or join token in pasted text: the bare code or a whole link.
+ * Returns { kind: 'invite' | 'join', code } or null.
+ */
+export function parseCode(text) {
+  const match = String(text ?? '').match(CODE_PATTERN);
+  return match ? { kind: match[1], code: match[0] } : null;
+}
+
+/** "https://host/join#bbr_…": the code stays in the fragment, so it's never sent in a request line. */
+export function joinLink(code) {
+  return `${window.location.origin}/join#${code}`;
+}
 
 /**
  * Walks a paginated list route page by page.

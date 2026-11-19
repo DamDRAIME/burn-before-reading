@@ -6,6 +6,8 @@ import { writePage } from './pages/write.js';
 import { historyPage } from './pages/history.js';
 import { adminPage } from './pages/admin.js';
 import { adminSignInPage, joinPage, notFoundPage, sessionErrorPage } from './pages/access.js';
+import { openSettings } from './pages/settings.js';
+import { closePane } from './pane.js';
 
 const root = document.getElementById('app');
 const state = { me: null };
@@ -29,6 +31,7 @@ function scheduleRender() {
 }
 
 onUnauthorized((role) => {
+  closePane();
   if (role === 'user') {
     auth.setUserToken(null);
     state.me = null;
@@ -73,9 +76,12 @@ function nav(ctx, path) {
       link('/', 'Write'),
       ctx.me && link('/history', 'History'),
       ctx.isAdmin && link('/admin', 'Admin'),
-      who && h('span', { class: 'nav__who' },
-        h('span', { class: 'avatar', 'aria-hidden': 'true' }, who.slice(0, 1).toUpperCase()),
-        who)));
+      who && h(ctx.me ? 'button' : 'span', ctx.me
+        ? { type: 'button', class: 'nav__who nav__who--button', 'aria-haspopup': 'dialog', title: 'Settings', onClick: () => openSettings(ctx) }
+        : { class: 'nav__who' },
+      h('span', { class: 'avatar', 'aria-hidden': 'true' }, who.slice(0, 1).toUpperCase()),
+      who,
+      ctx.me && h('span', { class: 'visually-hidden' }, ': settings'))));
 }
 
 async function render() {
@@ -83,6 +89,8 @@ async function render() {
   const sessionError = await loadSession();
   if (id !== renderId) return;
 
+  // A pane belongs to the page it was opened on.
+  if (window.location.pathname !== renderedPath) closePane();
   current?.destroy?.();
   current = null;
 
@@ -95,6 +103,23 @@ async function render() {
     signedIn() {
       state.me = null;
       scheduleRender();
+    },
+    signedOut() {
+      closePane();
+      auth.setUserToken(null);
+      state.me = null;
+      scheduleRender();
+    },
+    /**
+     * After a change to the account (joined, left, quiet hours): reloads /me and lets
+     * the page refresh what it shows, without re-rendering it (a draft stays put).
+     */
+    async refreshMe() {
+      const me = await api.me();
+      state.me = me;
+      ctx.me = me;
+      current?.meChanged?.(me);
+      return me;
     },
   };
 

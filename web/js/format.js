@@ -93,6 +93,42 @@ export function quietHoursText(printer) {
   return printer.quiet_start && printer.quiet_end ? `Quiet ${printer.quiet_start}–${printer.quiet_end}` : 'No quiet hours';
 }
 
+// -- Access ----
+
+/** "in 2 d", "in 14 min", "now" */
+export function timeUntil(value, now = Date.now()) {
+  const seconds = Math.round((new Date(value).getTime() - now) / 1000);
+  if (seconds <= 0) return 'now';
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `in ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `in ${hours} h`;
+  return `in ${Math.round(hours / 24)} d`;
+}
+
+/** Time left before expiry, "14:32", or null once expired. */
+export function countdown(value, now = Date.now()) {
+  const seconds = Math.floor((new Date(value).getTime() - now) / 1000);
+  if (seconds <= 0) return null;
+  return `${Math.floor(seconds / 60)}:${two(seconds % 60)}`;
+}
+
+/** "Pending · expires in 2 d", "Used by Heidi", "Revoked", "Expired" */
+export function joinTokenStatusText(token) {
+  switch (token.status) {
+    case 'pending':
+      return `Unused · expires ${timeUntil(token.expires_at)}`;
+    case 'used':
+      return `Used by ${token.used_by?.name ?? 'a deleted account'}`;
+    case 'revoked':
+      return 'Revoked';
+    case 'expired':
+      return 'Expired';
+    default:
+      return token.status;
+  }
+}
+
 // -- Messages ----
 
 export const TERMINAL_STATUSES = new Set(['printed', 'rejected', 'failed']);
