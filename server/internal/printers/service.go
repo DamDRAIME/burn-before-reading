@@ -79,7 +79,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, st
 		RecipientName: recipientName,
 		QuietStart:    params.QuietStart,
 		QuietEnd:      params.QuietEnd,
-		Timezone:      &timezone,
+		Timezone:      timezone,
 		TokenHash:     hash,
 	}
 
