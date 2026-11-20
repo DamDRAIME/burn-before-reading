@@ -20,7 +20,7 @@ Every protected route expects an `Authorization: Bearer <token>` header. The tok
 
 | Role | Route prefix | Token | Where it comes from |
 |---|---|---|---|
-| Admin | `/api/v1/admin` | the `ADMIN_TOKEN` environment variable | server configuration (placeholder until real admin accounts exist) |
+| Admin | `/api/v1/admin` | `bbr_session_…` of a user with `is_admin = true` | a regular user session; the flag is set in the database (see [Admins](#admins)) |
 | Printer | `/api/v1/printer` | `bbr_printer_…` | `POST /admin/printers` or `POST /admin/printers/{id}/rotate_token` |
 | User | `/api/v1/user` | `bbr_session_…` | `POST /users/join` with a `bbr_join_…` join token, or `POST /users/claim` with a `bbr_invite_…` invite |
 | Printer owner | `/api/v1/user/printers/{id}/…` | `bbr_session_…` of the user who owns printer `{id}` | an admin makes the user the owner of that printer |
@@ -28,19 +28,28 @@ Every protected route expects an `Authorization: Bearer <token>` header. The tok
 
 - Printer, session, invite and join tokens are random (about 130 bits) and only ever stored as `sha256(token)`. Someone who gets a copy of the database can't use it to call the API.
 - Every response that contains a plain token, invite or join token is sent with `Cache-Control: no-store`, and it is the only time that value is shown.
-- A missing or invalid token gets `401`. A `500` from the auth middleware means the server couldn't check the token (for example, the database is down): retry later rather than treating the token as revoked.
+- A missing or invalid token gets `401`. A valid session of a non-admin user on `/api/v1/admin` gets `403`. A `500` from the auth middleware means the server couldn't check the token (for example, the database is down): retry later rather than treating the token as revoked.
 
 ### Tokens
 
 | Token | Prefix | Issued by | Grants | Lifetime | Used at |
 |---|---|---|---|---|---|
-| Admin | none | server config (`ADMIN_TOKEN`) | the whole admin API | until changed | `Authorization` on `/api/v1/admin/*` |
 | Printer | `bbr_printer_` | admin (create printer, `rotate_token`) | act as that printer | until rotated | `Authorization` on `/api/v1/printer/*` |
-| Session | `bbr_session_` | the server, when an invite is claimed or a join token is used to sign up | act as that user | until revoked | `Authorization` on `/api/v1/user/*` |
+| Session | `bbr_session_` | the server, when an invite is claimed or a join token is used to sign up | act as that user; also the whole admin API if the user is an admin | until revoked | `Authorization` on `/api/v1/user/*` (and `/api/v1/admin/*` for admins) |
 | Invite | `bbr_invite_` | admin (new account, or recovery) or the user themselves (device invite) | **one** new session on **that** account | admin: 2 days, device invite: 15 minutes; single use | `POST /users/claim` |
 | Join | `bbr_join_` | the printer's owner, or the admin | **membership of one printer** for the account that uses it (an existing one, or a new one created at that moment). Never a login to an existing account. | 2 days, single use, revocable | `POST /users/join` (no session) or `POST /user/memberships` (with a session) |
 
 An account has at most one pending invite: issuing a new one replaces it.
+
+### Admins
+An admin is a regular user with `users.is_admin = true`. There is no shared admin secret: each admin signs in with their own session, so admin access is revoked per device or per person like any other session (`DELETE /user/sessions/{id}`, or `DELETE /admin/users/{id}/sessions`). The flag is read on every request, so promoting or demoting takes effect on the next request.
+
+There is no API route to grant the flag yet. Set it directly in the database:
+```sql
+UPDATE users SET is_admin = true WHERE id = '<user id>';
+```
+
+An admin still follows the [user lifecycle](#user-lifecycle). In particular, **an admin left with no printer loses all their sessions**, and a recovery invite can't be issued to a user with no printer. Keep every admin linked to at least one printer.
 
 ### Printer tokens
 - **Issued once:** `POST /api/v1/admin/printers` returns the new printer with a `token` field. Copy it into the Pi's configuration.
@@ -98,6 +107,7 @@ erDiagram
     users {
         UUID id PK
         VARCHAR name "1..20 chars, shown as sender_name"
+        BOOLEAN is_admin "default false, grants /api/v1/admin"
         BYTEA invite_hash UK "sha256 of the pending invite, NULL once claimed"
         TIMESTAMPTZ invite_expires_at "set together with invite_hash"
         TIMESTAMPTZ created_at
@@ -134,7 +144,7 @@ erDiagram
         VARCHAR recipient_name "1..20 chars"
         TIME quiet_start "NULL together with quiet_end"
         TIME quiet_end
-        TEXT timezone "IANA name, default Europe/Brussels"
+        TEXT timezone "IANA name; Europe/Brussels by default with quiet hours, NULL without"
         TEXT error "last error reported by heartbeat"
         BYTEA token_hash UK "sha256 of the bbr_printer_ token"
         TIMESTAMPTZ created_at
@@ -345,7 +355,7 @@ Printers, users and join tokens are listed newest first.
 | `POST` | `/api/v1/users/join` | `{"join_token", "name", "device_name"}` | `201 {"token"}`: a new account, member of the token's printer |
 
 ### Admin routes
-All prefixed with `/api/v1/admin`.
+All prefixed with `/api/v1/admin`, with the session token of an [admin](#admins). Other users get `403`.
 
 **Messages**
 
@@ -472,7 +482,7 @@ The seeded printers and users have fixed, readable dev tokens. They must never b
 
 | User | ID | Token | Owns | Member of |
 |---|---|---|---|---|
-| Dave | `aaaaaaaa-0000-0000-0000-000000000001` | session `bbr_session_dev_dave` | Alice | Marc |
+| Dave | `aaaaaaaa-0000-0000-0000-000000000001` | session `bbr_session_dev_dave` (**admin**) | Alice | Marc |
 | Eve | `aaaaaaaa-0000-0000-0000-000000000002` | session `bbr_session_dev_eve` | Bob | Alice, Marc |
 | Frank | `aaaaaaaa-0000-0000-0000-000000000003` | session `bbr_session_dev_frank` (revoked) | Carol | Marc |
 | Grace | `aaaaaaaa-0000-0000-0000-000000000004` | invite `bbr_invite_dev_grace` (unclaimed) | | Alice |
@@ -486,10 +496,11 @@ The seeded printers and users have fixed, readable dev tokens. They must never b
 | `bbr_join_dev_eve` | Bob | admin | revoked |
 
 ### Run the API
-`ADMIN_TOKEN` is required; it protects the `/api/v1/admin` routes:
 ```shell
-ADMIN_TOKEN=mytoken go run .
+go run .
 ```
+
+Only `DATABASE_URL` is required (`ADDR` defaults to `:8080`). With the seed data, Dave is the admin: the admin examples below use his session.
 
 Submit a message as Dave:
 ```shell
@@ -499,19 +510,19 @@ curl -s -X POST localhost:8080/api/v1/user/messages -H 'Authorization: Bearer bb
 
 Moderate it as an admin:
 ```shell
-curl -s 'localhost:8080/api/v1/admin/messages?status=awaiting_approval' -H 'Authorization: Bearer mytoken' | jq
-curl -s -X PATCH localhost:8080/api/v1/admin/messages/<id>/approve -H 'Authorization: Bearer mytoken' | jq
+curl -s 'localhost:8080/api/v1/admin/messages?status=awaiting_approval' -H 'Authorization: Bearer bbr_session_dev_dave' | jq
+curl -s -X PATCH localhost:8080/api/v1/admin/messages/<id>/approve -H 'Authorization: Bearer bbr_session_dev_dave' | jq
 ```
 
 Create a printer (the response contains its token, shown only once):
 ```shell
-curl -s -X POST localhost:8080/api/v1/admin/printers -H 'Authorization: Bearer mytoken' \
+curl -s -X POST localhost:8080/api/v1/admin/printers -H 'Authorization: Bearer bbr_session_dev_dave' \
   -H 'Content-Type: application/json' -d '{"model":"Epson TM-T20III","recipient_name":"Zoe"}' | jq
 ```
 
 Create a user who may send to Alice, then claim the invite from their device:
 ```shell
-curl -s -X POST localhost:8080/api/v1/admin/users -H 'Authorization: Bearer mytoken' \
+curl -s -X POST localhost:8080/api/v1/admin/users -H 'Authorization: Bearer bbr_session_dev_dave' \
   -H 'Content-Type: application/json' -d '{"name":"Ivan","printer_ids":["11111111-1111-1111-1111-111111111111"]}' | jq
 curl -s -X POST localhost:8080/api/v1/users/claim \
   -H 'Content-Type: application/json' -d '{"invite":"<invite>","device_name":"Ivan phone"}' | jq
@@ -551,7 +562,7 @@ curl -i -X DELETE localhost:8080/api/v1/user/printers/11111111-1111-1111-1111-11
 Transfer a printer, as an admin (here Grace becomes the owner of Marc's printer, and Marc a member):
 ```shell
 curl -s -X PUT localhost:8080/api/v1/admin/printers/44444444-4444-4444-4444-444444444444/owner \
-  -H 'Authorization: Bearer mytoken' -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer bbr_session_dev_dave' -H 'Content-Type: application/json' \
   -d '{"user_id":"aaaaaaaa-0000-0000-0000-000000000004"}' | jq
 ```
 

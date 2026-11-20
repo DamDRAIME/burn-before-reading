@@ -55,10 +55,6 @@ func run(logger *slog.Logger) error {
 	if addr == "" {
 		addr = ":8080"
 	}
-	adminToken := os.Getenv("ADMIN_TOKEN")
-	if adminToken == "" {
-		return errors.New("ADMIN_TOKEN environment variable is not set")
-	}
 
 	// Initialize database connection pool
 	pool, err := database.NewPostgresPool(ctx, dbURL)
@@ -95,7 +91,7 @@ func run(logger *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, userHandler, adminToken, printerService, userService, userService, logger))
+	r.Mount("/api/v1", web.NewAPIRouter(msgHandler, printerHandler, userHandler, printerService, userService, userService, logger))
 
 	srv := &http.Server{
 		Addr:              addr,

@@ -166,17 +166,17 @@ func (s *Service) IsOwner(ctx context.Context, userID, printerID uuid.UUID) (boo
 
 // -- Sessions ----
 
-func (s *Service) Authenticate(ctx context.Context, sessionToken string) (uuid.UUID, uuid.UUID, error) {
+func (s *Service) Authenticate(ctx context.Context, sessionToken string) (uuid.UUID, uuid.UUID, bool, error) {
 	if !strings.HasPrefix(sessionToken, string(token.SessionPrefix)) {
-		return uuid.Nil, uuid.Nil, ErrInvalidSessionToken
+		return uuid.Nil, uuid.Nil, false, ErrInvalidSessionToken
 	}
 
-	userID, sessionID, err := s.store.GetUserIDBySessionHash(ctx, token.Hash(sessionToken))
+	userID, sessionID, isAdmin, err := s.store.GetUserIDBySessionHash(ctx, token.Hash(sessionToken))
 	if err != nil {
-		return uuid.Nil, uuid.Nil, err
+		return uuid.Nil, uuid.Nil, false, err
 	}
 
-	return userID, sessionID, nil
+	return userID, sessionID, isAdmin, nil
 }
 
 func (s *Service) ListSessions(ctx context.Context, userID uuid.UUID) ([]*Session, error) {

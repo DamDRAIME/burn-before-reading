@@ -31,13 +31,13 @@ INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezon
 --          she signed up with a join token from Dave
 -- Names are unique per printer (case-insensitive), not globally.
 
-INSERT INTO users (id, name, invite_hash, invite_expires_at, created_at) VALUES
-    ('aaaaaaaa-0000-0000-0000-000000000001', 'Dave',  NULL,                            NULL,                      NOW() - INTERVAL '25 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000002', 'Eve',   NULL,                            NULL,                      NOW() - INTERVAL '15 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000003', 'Frank', NULL,                            NULL,                      NOW() - INTERVAL '40 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000004', 'Grace', sha256('bbr_invite_dev_grace'),  NOW() + INTERVAL '2 days', NOW() - INTERVAL '1 hour'),
-    ('aaaaaaaa-0000-0000-0000-000000000005', 'Marc',  NULL,                            NULL,                      NOW() - INTERVAL '1 hour'),
-    ('aaaaaaaa-0000-0000-0000-000000000006', 'Heidi', NULL,                            NULL,                      NOW() - INTERVAL '2 hours');
+INSERT INTO users (id, name, is_admin, invite_hash, invite_expires_at, created_at) VALUES
+    ('aaaaaaaa-0000-0000-0000-000000000001', 'Dave',  TRUE, NULL,                            NULL,                      NOW() - INTERVAL '25 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', 'Eve',   FALSE, NULL,                            NULL,                      NOW() - INTERVAL '15 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000003', 'Frank', FALSE, NULL,                            NULL,                      NOW() - INTERVAL '40 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000004', 'Grace', FALSE, sha256('bbr_invite_dev_grace'),  NOW() + INTERVAL '2 days', NOW() - INTERVAL '1 hour'),
+    ('aaaaaaaa-0000-0000-0000-000000000005', 'Marc',  FALSE, NULL,                            NULL,                      NOW() - INTERVAL '1 hour'),
+    ('aaaaaaaa-0000-0000-0000-000000000006', 'Heidi', FALSE, NULL,                            NULL,                      NOW() - INTERVAL '2 hours');
 
 INSERT INTO user_printers (user_id, printer_id, role) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'owner'),

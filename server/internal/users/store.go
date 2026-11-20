@@ -40,7 +40,7 @@ type Store interface {
 
 	// -- Sessions ----
 
-	GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, uuid.UUID, error)
+	GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, uuid.UUID, bool, error)
 
 	ListSessions(ctx context.Context, userID uuid.UUID) ([]*Session, error)
 
