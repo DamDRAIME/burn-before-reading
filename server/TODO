@@ -54,6 +54,7 @@
 - [X] Set approved_at / claimed_at / printed_at on the matching transitions
 - [X] Add a RequeueMessage endpoint
 - [X] Add printers's endpoints
+- [ ] Add naive automated moderation
 
 ## Database
 - [X] Add an index column
