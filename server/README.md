@@ -311,7 +311,7 @@ Admin message responses include `sender_ip`, `source`, `attempts` and `last_erro
 | `DELETE` | `/printers/{id}/quiet_hours` | | `200 printer` (also clears `timezone`) |
 | `POST` | `/printers/{id}/rotate_token` | | `200 {"token"}` |
 
-Quiet hours are `"HH:MM"` strings and may cross midnight (`"22:00"` to `"07:00"`). They need both ends, and the ends must differ. `timezone` is an IANA name and defaults to `Europe/Brussels`. A printer is `online` when its last heartbeat is less than 20 seconds old.
+Quiet hours are `"HH:MM"` strings and may cross midnight (`"22:00"` to `"07:00"`). They need both ends, and the ends must differ. `timezone` is an IANA name. It defaults to Europe/Brussels when quiet hours are set and is null otherwise. A printer is `online` when its last heartbeat is less than 20 seconds old.
 
 **Users**
 

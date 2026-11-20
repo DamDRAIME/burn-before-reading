@@ -63,9 +63,13 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Printer, st
 		return nil, "", ErrEqualQuietHours
 	}
 
-	timezone, ok := normalizeTimezone(params.Timezone)
-	if !ok {
-		return nil, "", ErrInvalidTimezone
+	var timezone *string
+	if params.QuietStart != nil {
+		tz, ok := normalizeTimezone(params.Timezone)
+		if !ok {
+			return nil, "", ErrInvalidTimezone
+		}
+		timezone = &tz
 	}
 
 	t, hash := token.Generate(token.PrinterPrefix)
