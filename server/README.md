@@ -378,7 +378,7 @@ Admin message responses include `sender_ip`, `source`, `attempts` and `last_erro
 | `GET` | `/printers/{id}/join_tokens` | | `200 [join token]` with [list parameters](#list-query-parameters) |
 | `DELETE` | `/printers/{id}/join_tokens/{tokenID}` | | `204`; `404` if unknown or already used |
 
-Quiet hours are `"HH:MM"` strings and may cross midnight (`"22:00"` to `"07:00"`). They need both ends, and the ends must differ. `timezone` is an IANA name and defaults to `Europe/Brussels`. A printer is `online` when its last heartbeat is less than 20 seconds old.
+Quiet hours are `"HH:MM"` strings and may cross midnight (`"22:00"` to `"07:00"`). They need both ends, and the ends must differ. `timezone` is an IANA name. It defaults to Europe/Brussels when quiet hours are set and is null otherwise. A printer is `online` when its last heartbeat is less than 20 seconds old.
 
 **Users**
 
