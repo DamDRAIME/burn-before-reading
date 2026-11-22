@@ -1,7 +1,7 @@
 // History: the signed-in user's own messages, as small receipts.
 
 import { fill, h, rings, shape } from '../dom.js';
-import { api, PAGE_SIZE } from '../api.js';
+import { api, fetchAll, PAGE_SIZE } from '../api.js';
 import { clock, printerState, seqNo, senderStage, shortDate } from '../format.js';
 import { OFFLINE_AFTER, whenVisible } from '../visibility.js';
 
@@ -16,7 +16,7 @@ const CARD = {
   failed: { shape: 'rejected', label: 'Not printed' },
 };
 
-export function historyPage() {
+export function historyPage(ctx) {
   const st = {
     printers: new Map(),
     printerList: [],
@@ -58,7 +58,8 @@ export function historyPage() {
       h('article', { class: 'paper note-card__paper' },
         h('div', { class: 'note-card__head' },
           h('div', { class: 'note-card__title' },
-            h('span', { class: 'note-card__meta' }, `No.${seqNo(m.sequence_number)} · ${shortDate(m.created_at)}`),
+            h('span', { class: 'note-card__meta' }, `No.${seqNo(m.sequence_number)} · ${shortDate(m.created_at)}`,
+              m.source === 'admin' && h('span', { class: 'tag', title: 'Sent as admin: skipped moderation' }, 'Admin')),
             h('h2', { class: 'note-card__to' }, `To ${to}`)),
           shape(meta.shape, meta.label)),
         h('hr', { class: 'rule' }),
@@ -70,7 +71,13 @@ export function historyPage() {
   }
 
   function paint() {
-    const tabs = [['all', 'Everyone'], ...st.printerList.map((p) => [p.id, p.recipient_name])];
+    // Own printers, plus any other one written to (an admin can send to any printer).
+    const tabPrinters = new Map(st.printerList.map((p) => [p.id, p]));
+    for (const m of st.items) {
+      const p = st.printers.get(m.printer_id);
+      if (p && !tabPrinters.has(p.id)) tabPrinters.set(p.id, p);
+    }
+    const tabs = [['all', 'Everyone'], ...[...tabPrinters.values()].map((p) => [p.id, p.recipient_name])];
     const visible = st.items.filter((m) => st.filter === 'all' || m.printer_id === st.filter);
     const total = `${String(st.items.length).padStart(2, '0')}${st.more ? '+' : ''}`;
 
@@ -160,8 +167,13 @@ export function historyPage() {
 
   async function start() {
     try {
-      st.printerList = await api.userPrinters();
-      st.printers = new Map(st.printerList.map((p) => [p.id, p]));
+      // An admin may have sent to any printer, so names come from the full list.
+      const [mine, all] = await Promise.all([
+        api.userPrinters(),
+        ctx?.isAdmin ? fetchAll(api.adminPrinters) : null,
+      ]);
+      st.printers = new Map((all ?? mine).map((p) => [p.id, p]));
+      st.printerList = mine;
     } catch {
       // Recipients show as "someone"; the list still loads.
     }

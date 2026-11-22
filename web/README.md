@@ -35,7 +35,10 @@ Links and invites are shown once, with Copy and (where the browser supports it) 
 - Codes travel in the URL fragment, so they're never sent to the server in a request line or logged, and the page removes them from the address bar.
 - **Admins** are regular users with `is_admin` set on the server (see the server README). They sign in the same way; `GET /user/me` returns `is_admin`, which shows the **Admin** link in the nav. Signing out is the usual **Sign out** in Settings.
 - The session token is kept in `localStorage` and sent as `Authorization: Bearer`, on user and admin routes alike. A `401` forgets it and shows the sign-in again. A `403` on an admin route (the account was demoted) reloads `/user/me`, so the Admin link goes away. When the server sets the session cookie described in `SCRATCHPAD.md`, the token can stop living in `localStorage`.
-- For an admin, **Write** sends through `POST /admin/messages` to any printer: it skips moderation and the receipt is signed `ADMIN` (admin messages have no sender yet, so they don't show in the admin's History).
+- For an admin, the receipt on **Write** has an extra line, **AS** `MEMBER` / `ADMIN` (hover either for what it means; the choice is remembered on the device):
+  - `MEMBER`: like any user, through `POST /user/messages`. A moderator approves it, and only the admin's own printers are listed.
+  - `ADMIN`: through `POST /admin/messages`. It skips moderation and membership, so every printer is listed and it prints right away.
+  - Either way the message is signed with the admin's name and shows in their History; admin sends carry an `ADMIN` tag there and in the admin log.
 
 ## Running it
 

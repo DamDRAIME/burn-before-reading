@@ -52,13 +52,21 @@ function pickIdea() {
   return IDEAS[i];
 }
 
+// How an admin sends: as a member (moderated, own printers) or as admin (neither).
+const SEND_AS = {
+  member: { label: 'MEMBER', tip: 'Like everyone else: a moderator approves it first, and only your printers are listed.' },
+  admin: { label: 'ADMIN', tip: 'Skips moderation and membership: prints right away, on any printer.' },
+};
+
 export function writePage(ctx) {
-  const asAdmin = ctx.isAdmin;
-  const senderName = asAdmin ? 'Admin' : ctx.me.name;
+  const canAdmin = ctx.isAdmin;
+  const senderName = ctx.me.name;
 
   const st = {
-    printers: null,
+    printers: null, // the ones this account is on
+    allPrinters: null, // every printer, for an admin
     printersError: null,
+    sendAs: canAdmin && readPref('sendAs') === 'admin' ? 'admin' : 'member',
     to: readPref('recipient'),
     sending: false,
     sendError: null,
@@ -110,8 +118,15 @@ export function writePage(ctx) {
 
   // -- Derived values --
 
+  const asAdmin = () => st.sendAs === 'admin';
+
+  /** The list being picked from: null while it loads. */
+  function printerSource() {
+    return asAdmin() ? st.allPrinters : st.printers;
+  }
+
   function printers() {
-    return st.printers ?? [];
+    return printerSource() ?? [];
   }
 
   function selected() {
@@ -161,12 +176,13 @@ export function writePage(ctx) {
 
   function recipientField() {
     if (st.message) return h('span', { class: 'receipt__strong' }, (st.sentTo?.recipient_name ?? '—').toUpperCase());
+    const list = printerSource();
     if (st.printersError) return h('span', { class: 'receipt__muted' }, 'COULDN’T LOAD');
-    if (!st.printers) return h('span', { class: 'receipt__muted' }, 'LOADING…');
-    if (st.printers.length === 0) return h('span', { class: 'receipt__muted' }, 'NOBODY YET');
+    if (!list) return h('span', { class: 'receipt__muted' }, 'LOADING…');
+    if (list.length === 0) return h('span', { class: 'receipt__muted' }, 'NOBODY YET');
     const current = selected();
     return h('div', { role: 'group', 'aria-label': 'Recipient', class: 'receipt__recipients' },
-      st.printers.map((p) => h('button', {
+      list.map((p) => h('button', {
         type: 'button',
         class: 'who',
         'aria-pressed': p.id === current.id ? 'true' : 'false',
@@ -176,6 +192,29 @@ export function writePage(ctx) {
           paint();
         },
       }, p.recipient_name.toUpperCase())));
+  }
+
+  /** Admins only: send as a member or as admin. Once sent, shows how it went out. */
+  function sendAsField() {
+    if (st.message) {
+      return h('span', { class: 'receipt__strong' }, SEND_AS[st.message.source === 'admin' ? 'admin' : 'member'].label);
+    }
+    return h('div', { role: 'group', 'aria-label': 'Send as', class: 'receipt__recipients receipt__sendas' },
+      Object.entries(SEND_AS).map(([key, opt]) => h('button', {
+        type: 'button',
+        class: 'who tip',
+        'data-tip': opt.tip,
+        'aria-pressed': st.sendAs === key ? 'true' : 'false',
+        'aria-description': opt.tip,
+        disabled: st.sending,
+        onClick: () => {
+          if (st.sendAs === key) return;
+          st.sendAs = key;
+          writePref('sendAs', key);
+          st.sendError = null;
+          paint();
+        },
+      }, opt.label)));
   }
 
   function receipt() {
@@ -192,6 +231,8 @@ export function writePage(ctx) {
           recipientField(),
           h('span', { class: 'receipt__muted' }, 'FROM'),
           h('span', null, senderName.toUpperCase()),
+          canAdmin && h('span', { class: 'receipt__muted' }, 'AS'),
+          canAdmin && sendAsField(),
           h('span', { class: 'receipt__muted' }, 'DATE'),
           dateEl),
         h('hr', { class: 'rule' }),
@@ -205,11 +246,14 @@ export function writePage(ctx) {
   function draftActions() {
     const p = selected();
     const state = p ? printerState(p) : null;
-    let hint = asAdmin ? 'Admin: skips approval, prints right away.' : 'A moderator glances at it first.';
+    let hint = asAdmin() ? 'As admin: skips approval, prints right away.' : 'A moderator glances at it first.';
     if (state?.kind === 'asleep') hint = `${p.recipient_name}’s printer is asleep until ${p.quiet_end}. It’ll print then.`;
     else if (state?.kind === 'offline') hint = `${p.recipient_name}’s printer is offline. It’ll print when it’s back.`;
-    if (st.printers && st.printers.length === 0) {
-      hint = asAdmin ? 'There are no printers yet.' : 'You can’t send to anyone yet. Ask a printer’s owner for a join link.';
+    const list = printerSource();
+    if (list && list.length === 0) {
+      hint = asAdmin() ? 'There are no printers yet.'
+        : canAdmin ? 'You’re not on any printer. Send as admin to reach any of them.'
+          : 'You can’t send to anyone yet. Ask a printer’s owner for a join link.';
     }
 
     sendButton = h('button', { type: 'button', class: 'btn btn--solid btn--lg', onClick: send },
@@ -230,7 +274,7 @@ export function writePage(ctx) {
 
     const p = st.sentTo;
     const pState = p ? printerState(p) : null;
-    const prefix = asAdmin ? 'Queued.' : 'Approved.';
+    const prefix = st.message?.source === 'admin' ? 'Queued.' : 'Approved.';
     const lines = {
       awaiting: 'Waiting for a moderator.',
       queued: pState?.kind === 'asleep' ? `${prefix} Prints at ${p.quiet_end}.`
@@ -285,13 +329,21 @@ export function writePage(ctx) {
 
   async function fetchPrinters() {
     try {
-      st.printers = asAdmin ? await fetchAll(api.adminPrinters) : await api.userPrinters();
+      const [mine, all] = await Promise.all([
+        api.userPrinters(),
+        canAdmin ? fetchAll(api.adminPrinters) : null,
+      ]);
+      st.printers = mine;
+      st.allPrinters = all;
       st.printersError = null;
     } catch (err) {
-      if (!st.printers) st.printersError = `Couldn’t load printers. ${err.message}`;
+      if (!printerSource()) st.printersError = `Couldn’t load printers. ${err.message}`;
     }
     if (destroyed) return;
-    if (st.sentTo) st.sentTo = st.printers?.find((p) => p.id === st.sentTo.id) ?? st.sentTo;
+    if (st.sentTo) {
+      const known = [...(st.allPrinters ?? []), ...(st.printers ?? [])];
+      st.sentTo = known.find((p) => p.id === st.sentTo.id) ?? st.sentTo;
+    }
     paint();
   }
 
@@ -308,7 +360,7 @@ export function writePage(ctx) {
     st.sendError = null;
     paint();
     try {
-      const message = asAdmin ? await api.sendAsAdmin(p.id, content) : await api.sendAsUser(p.id, content);
+      const message = asAdmin() ? await api.sendAsAdmin(p.id, content) : await api.sendAsUser(p.id, content);
       if (destroyed) return;
       st.message = message;
       st.sentTo = p;
@@ -328,7 +380,8 @@ export function writePage(ctx) {
     later(async () => {
       if (st.message?.id !== id) return;
       try {
-        const message = asAdmin ? await api.adminMessage(id) : await api.userMessage(id);
+        // Admin messages carry the admin as sender, so the user route follows both kinds.
+        const message = await api.userMessage(id);
         if (destroyed || st.message?.id !== id) return;
         const wasOffline = st.pollFailures >= OFFLINE_AFTER;
         st.pollFailures = 0;

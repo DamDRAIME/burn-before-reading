@@ -368,7 +368,7 @@ All prefixed with `/api/v1/admin`, with the session token of an [admin](#admins)
 | `PATCH` | `/messages/{id}/reject` | | `200 message` (`awaiting_approval` → `rejected`) |
 | `PATCH` | `/messages/{id}/requeue` | | `200 message` (`failed` → `pending`) |
 
-Admin message responses include `sender_ip`, `source`, `attempts` and `last_error`, which user and printer responses leave out.
+Admin message responses include `sender_ip`, `attempts` and `last_error`, which user and printer responses leave out. Every response includes `source` (`web`, or `admin` for a message an admin sent through `POST /admin/messages`), so an admin sees in their own history which messages skipped moderation.
 
 **Printers**
 

@@ -260,6 +260,23 @@ hr.rule { margin: 0; border: 0; border-top: 1px dashed var(--rule); }
 }
 .who:hover { color: var(--ink); }
 .who[aria-pressed='true'] { color: var(--ink); font-weight: 500; border-bottom-color: var(--accent); }
+.who:disabled { cursor: default; }
+
+/* Send as (admins): its tooltip is placed against the row, not the option, so it never
+   runs off a phone screen. */
+.receipt__sendas { position: relative; }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 2;
+  width: max-content; max-width: 100%;
+  padding: 8px 10px; border-top: 3px solid var(--accent);
+  background: var(--ink); color: var(--paper);
+  font: 400 11px/1.5 var(--mono); letter-spacing: 0.02em; text-align: left; white-space: normal;
+  opacity: 0; transform: translateY(4px); pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.tip:hover::after, .tip:focus-visible::after { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .tip::after { transition: none; } }
 
 .receipt__write {
   display: block; border: 0; background: transparent; outline: none; resize: none;
