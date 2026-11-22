@@ -1,11 +1,11 @@
 import { fill, h } from './dom.js';
 import { installDither } from './dither.js';
-import { api, ApiError, onUnauthorized } from './api.js';
+import { api, ApiError, onForbidden, onUnauthorized } from './api.js';
 import { auth } from './auth.js';
 import { writePage } from './pages/write.js';
 import { historyPage } from './pages/history.js';
 import { adminPage } from './pages/admin.js';
-import { adminSignInPage, joinPage, notFoundPage, sessionErrorPage } from './pages/access.js';
+import { adminOnlyPage, joinPage, notFoundPage, sessionErrorPage } from './pages/access.js';
 import { openSettings } from './pages/settings.js';
 import { closePane } from './pane.js';
 
@@ -30,14 +30,19 @@ function scheduleRender() {
   });
 }
 
-onUnauthorized((role) => {
+onUnauthorized(() => {
   closePane();
-  if (role === 'user') {
-    auth.setUserToken(null);
-    state.me = null;
-  } else {
-    auth.setAdminToken(null);
-  }
+  auth.setUserToken(null);
+  state.me = null;
+  scheduleRender();
+});
+
+// Demoted while signed in (is_admin is read on every request): reload /me, which re-renders
+// /admin as "admins only" and Write as a regular user's.
+onForbidden(() => {
+  if (!state.me?.is_admin) return;
+  closePane();
+  state.me = null;
   scheduleRender();
 });
 
@@ -69,19 +74,17 @@ async function loadSession() {
 
 function nav(ctx, path) {
   const link = (href, label, extra) => h('a', { href, 'data-link': true, class: 'nav__link', 'aria-current': path === href ? 'page' : null }, label, extra);
-  const who = ctx.me ? ctx.me.name : ctx.isAdmin ? 'Admin' : null;
+  const who = ctx.me?.name;
   return h('header', { class: 'site-header' },
     h('a', { href: '/', 'data-link': true, class: 'site-header__brand' }, 'Burn Before Reading'),
-    (ctx.me || ctx.isAdmin) && h('nav', { class: 'nav', 'aria-label': 'Main' },
+    ctx.me && h('nav', { class: 'nav', 'aria-label': 'Main' },
       link('/', 'Write'),
-      ctx.me && link('/history', 'History'),
+      link('/history', 'History'),
       ctx.isAdmin && link('/admin', 'Admin', h('span', { class: 'nav__count', 'data-admin-count': true })),
-      who && h(ctx.me ? 'button' : 'span', ctx.me
-        ? { type: 'button', class: 'nav__who nav__who--button', 'aria-haspopup': 'dialog', title: 'Settings', onClick: () => openSettings(ctx) }
-        : { class: 'nav__who' },
-      h('span', { class: 'avatar', 'aria-hidden': 'true' }, who.slice(0, 1).toUpperCase()),
-      who,
-      ctx.me && h('span', { class: 'visually-hidden' }, ': settings'))));
+      h('button', { type: 'button', class: 'nav__who nav__who--button', 'aria-haspopup': 'dialog', title: 'Settings', onClick: () => openSettings(ctx) },
+        h('span', { class: 'avatar', 'aria-hidden': 'true' }, who.slice(0, 1).toUpperCase()),
+        who,
+        h('span', { class: 'visually-hidden' }, ': settings'))));
 }
 
 async function render() {
@@ -98,7 +101,7 @@ async function render() {
   const ctx = {
     me: state.me,
     isUser: Boolean(state.me),
-    isAdmin: Boolean(auth.adminToken()),
+    isAdmin: Boolean(state.me?.is_admin),
     navigate,
     signedIn() {
       state.me = null;
@@ -128,6 +131,11 @@ async function render() {
       const me = await api.me();
       state.me = me;
       ctx.me = me;
+      // Admin rights changed: the nav and the pages differ, so render again.
+      if (Boolean(me.is_admin) !== ctx.isAdmin) {
+        scheduleRender();
+        return me;
+      }
       current?.meChanged?.(me);
       return me;
     },
@@ -136,9 +144,9 @@ async function render() {
   let page;
   if (sessionError) page = sessionErrorPage(ctx, sessionError, scheduleRender);
   else if (path === '/join') page = joinPage(ctx);
-  else if (path === '/admin') page = ctx.isAdmin ? adminPage(ctx) : adminSignInPage(ctx);
+  else if (path === '/admin') page = ctx.isAdmin ? adminPage(ctx) : ctx.isUser ? adminOnlyPage(ctx) : joinPage(ctx);
   else if (path === '/history') page = ctx.isUser ? historyPage(ctx) : joinPage(ctx);
-  else if (path === '/') page = ctx.isUser || ctx.isAdmin ? writePage(ctx) : joinPage(ctx);
+  else if (path === '/') page = ctx.isUser ? writePage(ctx) : joinPage(ctx);
   else page = notFoundPage(ctx);
 
   document.title = page.title ? `${page.title} · Burn Before Reading` : 'Burn Before Reading';

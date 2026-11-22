@@ -8,7 +8,7 @@ The website people use to write messages, follow them until they're printed, and
 |---|---|---|
 | `/` | user or admin | **Write.** The receipt is the composer: pick a recipient, write, print. After sending, the circle and the four-step bar follow the message (awaiting → approved → queued → printed), polling every 3 s. The draft is kept on this device until it's sent, so a reload or a trip to History doesn't lose it. |
 | `/history` | user | The user's own messages as small receipts, filterable by recipient. |
-| `/admin` | admin | Counts, a 52-week activity grid, the approval queue, printers, users and the full message log (with requeue for failed messages). Each printer and user has a **Manage** pane: ownership, quiet hours, join links, printer access, devices and recovery invites. |
+| `/admin` | admin | (A signed-in user who isn't an admin sees "Admins only".) Counts, a 52-week activity grid, the approval queue, printers, users and the full message log (with requeue for failed messages). Each printer and user has a **Manage** pane: ownership, quiet hours, join links, printer access, devices and recovery invites. |
 | `/join#bbr_join_…` | anyone | Signs up with a printer owner's join link (pick a name, name the device). Someone already signed in gets a "Join as *name*" confirmation instead, which adds the printer to their account. |
 | `/join#bbr_invite_…` | anyone | Claims an invite (from the admin, or a device invite from your own account) for this device. The same form shows on `/` when nobody is signed in, and accepts either kind of code. |
 
@@ -33,21 +33,21 @@ Links and invites are shown once, with Copy and (where the browser supports it) 
 - **New users** open the join link a printer's owner sent them (`/join#bbr_join_…`), pick their name and name the device, and get a session token. The admin can also create an account and send an invite (`/join#bbr_invite_…`), which only asks for a device name.
 - **More devices:** a signed-in user creates a device invite in Settings and opens it on the other device.
 - Codes travel in the URL fragment, so they're never sent to the server in a request line or logged, and the page removes them from the address bar.
-- **Admins** sign in on `/admin` with the server's `ADMIN_TOKEN`. A "Sign out" link there forgets it.
-- Both tokens are kept in `localStorage` and sent as `Authorization: Bearer`. A `401` forgets the token and shows the sign-in again. When the server sets the session cookie described in `SCRATCHPAD.md`, the user token can stop living in `localStorage`.
-- With an admin token, **Write** sends through `POST /admin/messages`: it skips moderation and the receipt is signed `ADMIN` (admin messages have no sender).
+- **Admins** are regular users with `is_admin` set on the server (see the server README). They sign in the same way; `GET /user/me` returns `is_admin`, which shows the **Admin** link in the nav. Signing out is the usual **Sign out** in Settings.
+- The session token is kept in `localStorage` and sent as `Authorization: Bearer`, on user and admin routes alike. A `401` forgets it and shows the sign-in again. A `403` on an admin route (the account was demoted) reloads `/user/me`, so the Admin link goes away. When the server sets the session cookie described in `SCRATCHPAD.md`, the token can stop living in `localStorage`.
+- For an admin, **Write** sends through `POST /admin/messages` to any printer: it skips moderation and the receipt is signed `ADMIN` (admin messages have no sender yet, so they don't show in the admin's History).
 
 ## Running it
 
 The API doesn't send CORS headers, so the frontend must be served from the same origin. The Go server serves it when `WEB_DIR` is set:
 
 ```shell
-WEB_DIR=../web ADMIN_TOKEN=mytoken go run .
+WEB_DIR=../web go run .
 ```
 
 Then open http://localhost:8080. In the devcontainer, `web/` is mounted at `/web` and `WEB_DIR` is already set (rebuild the container once after pulling this change).
 
-With the seed data, open `/join#bbr_join_dev_marc` to sign up with a join link, paste `bbr_invite_dev_grace` on the join form, or put a dev session straight into the browser console (Dave owns the printer "Alice and Dave"):
+With the seed data, open `/join#bbr_join_dev_marc` to sign up with a join link, paste `bbr_invite_dev_grace` on the join form, or put a dev session straight into the browser console. Dave owns the printer "Alice and Dave" and is the seeded admin; use `bbr_session_dev_eve` to see a regular user:
 
 ```js
 localStorage.setItem('bbr.userToken', 'bbr_session_dev_dave'); location.reload();

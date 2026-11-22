@@ -423,7 +423,7 @@ All prefixed with `/api/v1/user`, with the user's session token.
 
 | Method | Route | Body | Response |
 |---|---|---|---|
-| `GET` | `/me` | | `200 {id, name, printer_accesses: [{printer_id, role}]}` |
+| `GET` | `/me` | | `200 {id, name, is_admin, printer_accesses: [{printer_id, role}]}` |
 | `GET` | `/printers` | | `200 [printer]`, the printers this user may send to |
 | `GET` | `/messages` | | `200 [message]`, only the caller's, with [list parameters](#list-query-parameters) |
 | `POST` | `/messages` | `{"printer_id", "content"}` | `201 message`, status `awaiting_approval` |
@@ -502,7 +502,7 @@ go run .
 
 Set `WEB_DIR` to serve the website from the same origin (see [web/README.md](../web/README.md)):
 ```shell
-WEB_DIR=../web ADMIN_TOKEN=mytoken go run .
+WEB_DIR=../web go run .
 ```
 Only `DATABASE_URL` is required (`ADDR` defaults to `:8080`). With the seed data, Dave is the admin: the admin examples below use his session.
 

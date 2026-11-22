@@ -121,6 +121,7 @@ type printerAccessResponse struct {
 type userAdminResponse struct {
 	ID              uuid.UUID               `json:"id"`
 	Name            string                  `json:"name"`
+	IsAdmin         bool                    `json:"is_admin"`
 	PrinterAccesses []printerAccessResponse `json:"printer_accesses"`
 	CreatedAt       time.Time               `json:"created_at"`
 	LastUpdatedAt   time.Time               `json:"last_updated_at"`
@@ -134,6 +135,7 @@ type userCreateResponse struct {
 type userMeResponse struct {
 	ID              uuid.UUID               `json:"id"`
 	Name            string                  `json:"name"`
+	IsAdmin         bool                    `json:"is_admin"`
 	PrinterAccesses []printerAccessResponse `json:"printer_accesses"`
 }
 
@@ -606,6 +608,7 @@ func toUserAdminResponse(u *users.User) userAdminResponse {
 	return userAdminResponse{
 		ID:              u.ID,
 		Name:            u.Name,
+		IsAdmin:         u.IsAdmin,
 		PrinterAccesses: mapSlice(u.PrinterAccesses, toPrinterAccessResponse),
 		CreatedAt:       u.CreatedAt,
 		LastUpdatedAt:   u.LastUpdatedAt,
@@ -616,6 +619,7 @@ func toUserMeResponse(u *users.User) userMeResponse {
 	return userMeResponse{
 		ID:              u.ID,
 		Name:            u.Name,
+		IsAdmin:         u.IsAdmin,
 		PrinterAccesses: mapSlice(u.PrinterAccesses, toPrinterAccessResponse),
 	}
 }

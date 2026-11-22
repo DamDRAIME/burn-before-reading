@@ -128,8 +128,7 @@ function connectPage(ctx, fromHash) {
         nameField,
         field('device', 'Device name', deviceInput, 'Helps you tell your devices apart in Settings.'),
         submit,
-        error),
-      h('p', { class: 'muted small' }, 'Running this? ', h('a', { href: '/admin', 'data-link': true }, 'Sign in as admin'), '.')));
+        error)));
 
   if (fromHash) queueMicrotask(() => (kind === 'join' ? nameInput : deviceInput).focus());
   return { el, title: 'Join' };
@@ -175,37 +174,12 @@ function joinAsMemberPage(ctx, code) {
   return { el, title: 'Join' };
 }
 
-export function adminSignInPage(ctx) {
-  const tokenInput = h('input', { id: 'admin-token', class: 'input input--mono', type: 'password', autocomplete: 'current-password', required: true });
-  const error = h('p', { class: 'form-error', role: 'alert' });
-  const submit = h('button', { type: 'submit', class: 'btn btn--solid' }, 'Sign in');
-
-  async function onSubmit(event) {
-    event.preventDefault();
-    const token = tokenInput.value.trim();
-    if (!token) return;
-    submit.disabled = true;
-    error.textContent = '';
-    try {
-      await api.checkAdminToken(token);
-      auth.setAdminToken(token);
-      ctx.signedIn();
-    } catch (err) {
-      error.textContent = err instanceof ApiError && err.status === 401 ? 'That token isn’t right.' : err.message;
-      submit.disabled = false;
-    }
-  }
-
+/** Signed in, but not as an admin. Admin rights are set on the account, on the server. */
+export function adminOnlyPage(ctx) {
   const el = h('main', { class: 'page access' },
-    hero('Admin', 'Approve messages, watch the printers, and send without moderation.'),
-    h('section', { class: 'access__panel' },
-      h('form', { class: 'card-form', onSubmit },
-        h('h2', { class: 'section-title' }, 'Sign in'),
-        field('admin-token', 'Admin token', tokenInput, 'The server’s ADMIN_TOKEN. It’s remembered in this browser until you sign out.'),
-        submit,
-        error)));
-
-  return { el, title: 'Admin sign-in' };
+    hero('Admins only', `This page is for whoever runs the printers. ${ctx.me.name} isn’t an admin. If you should be, ask the person who runs the server.`),
+    h('section', { class: 'access__panel' }, h('a', { href: '/', 'data-link': true, class: 'btn btn--solid' }, 'Go to Write')));
+  return { el, title: 'Admins only' };
 }
 
 export function sessionErrorPage(ctx, err, retry) {

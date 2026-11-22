@@ -1,9 +1,9 @@
-// Tokens are kept in localStorage so a device stays signed in after the browser restarts.
-// See SCRATCHPAD.md: once the server sets an HttpOnly session cookie on claim, the user
-// token can stop living here.
+// The session token is kept in localStorage so a device stays signed in after the browser
+// restarts. Admins use the same session: admin rights come from `is_admin` on /user/me.
+// See SCRATCHPAD.md: once the server sets an HttpOnly session cookie on claim, the token
+// can stop living here.
 
 const USER_KEY = 'bbr.userToken';
-const ADMIN_KEY = 'bbr.adminToken';
 
 function read(key) {
   try {
@@ -22,7 +22,10 @@ function write(key, value) {
   }
 }
 
-const memory = { [USER_KEY]: null, [ADMIN_KEY]: null };
+// The shared ADMIN_TOKEN is gone from the server: forget one left over from before.
+write('bbr.adminToken', null);
+
+const memory = { [USER_KEY]: null };
 
 function get(key) {
   return read(key) ?? memory[key];
@@ -36,8 +39,6 @@ function set(key, value) {
 export const auth = {
   userToken: () => get(USER_KEY),
   setUserToken: (token) => set(USER_KEY, token),
-  adminToken: () => get(ADMIN_KEY),
-  setAdminToken: (token) => set(ADMIN_KEY, token),
 };
 
 export function readPref(key) {

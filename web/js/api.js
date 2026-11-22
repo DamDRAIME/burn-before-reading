@@ -13,24 +13,31 @@ export class ApiError extends Error {
 }
 
 let unauthorizedHandler = () => {};
+let forbiddenHandler = () => {};
 
-/** Called with 'user' or 'admin' when a request with that role's token gets a 401. */
+/** Called when a request with the session token gets a 401: the session is gone. */
 export function onUnauthorized(fn) {
   unauthorizedHandler = fn;
+}
+
+/** Called when an admin route gets a 403: the session is fine, but no longer an admin's. */
+export function onForbidden(fn) {
+  forbiddenHandler = fn;
 }
 
 function capitalize(text) {
   return text ? text[0].toUpperCase() + text.slice(1) : text;
 }
 
-async function request(role, method, path, { body, query, token, quiet = false } = {}) {
+/** `role` is null for public routes, 'user' or 'admin' otherwise; both send the session token. */
+async function request(role, method, path, { body, query } = {}) {
   const url = new URL(BASE + path, window.location.origin);
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value != null && value !== '') url.searchParams.set(key, String(value));
   }
 
   const headers = { Accept: 'application/json' };
-  const bearer = token ?? (role === 'user' ? auth.userToken() : role === 'admin' ? auth.adminToken() : null);
+  const bearer = role ? auth.userToken() : null;
   if (role && !bearer) throw new ApiError(401, 'Not signed in.');
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -61,7 +68,8 @@ async function request(role, method, path, { body, query, token, quiet = false }
   }
 
   if (!res.ok) {
-    if (res.status === 401 && role && !quiet) unauthorizedHandler(role);
+    if (res.status === 401 && role) unauthorizedHandler();
+    if (res.status === 403 && role === 'admin') forbiddenHandler();
     const message = data && typeof data.error === 'string' ? capitalize(data.error) : `Request failed (${res.status}).`;
     throw new ApiError(res.status, message);
   }
@@ -96,8 +104,7 @@ export const api = {
   ownerCreateJoinToken: (printerId) => request('user', 'POST', `/user/printers/${id(printerId)}/join_tokens`),
   ownerRevokeJoinToken: (printerId, tokenId) => request('user', 'DELETE', `/user/printers/${id(printerId)}/join_tokens/${id(tokenId)}`),
 
-  // Admin
-  checkAdminToken: (token) => request('admin', 'GET', '/admin/printers', { token, quiet: true, query: { limit: 1 } }),
+  // Admin (the session of a user with is_admin)
   adminPrinters: (query) => request('admin', 'GET', '/admin/printers', { query }),
   adminMessages: (query) => request('admin', 'GET', '/admin/messages', { query }),
   adminMessage: (messageId) => request('admin', 'GET', `/admin/messages/${id(messageId)}`),

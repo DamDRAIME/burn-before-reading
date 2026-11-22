@@ -2,7 +2,6 @@
 
 import { fill, h, rings, shape } from '../dom.js';
 import { api, ApiError, fetchAll, joinLink, PAGE_SIZE } from '../api.js';
-import { auth } from '../auth.js';
 import { dayKey, longDate, MONTHS_SHORT, printerState, quietHoursText, seqNo, shortDate, STATUS, timeAgo } from '../format.js';
 import { confirmButton, copyField, openPane } from '../pane.js';
 import { joinLinksList, quietHoursForm } from '../printer-tools.js';
@@ -89,16 +88,7 @@ export function adminPage(ctx) {
           h('a', { href: '#queue' }, 'Approvals'),
           h('a', { href: '#printers' }, 'Printers'),
           h('a', { href: '#users' }, 'Users'),
-          h('a', { href: '#log' }, 'All messages'),
-          h('button', {
-            type: 'button',
-            class: 'link-button',
-            onClick: () => {
-              auth.setAdminToken(null);
-              ctx.navigate('/');
-              ctx.signedIn();
-            },
-          }, 'Sign out'))),
+          h('a', { href: '#log' }, 'All messages'))),
       errorEl,
       statsEl),
     activityEl,
@@ -279,6 +269,7 @@ export function adminPage(ctx) {
   const ownerOf = (pid) => st.users.find((u) => u.printer_accesses.some((a) => a.printer_id === pid && a.role === 'owner'));
   const peopleOn = (pid) => st.users.filter((u) => u.printer_accesses.some((a) => a.printer_id === pid));
   const ownedBy = (u) => u.printer_accesses.find((a) => a.role === 'owner');
+  const isMe = (u) => u.id === ctx.me?.id;
 
   function accessesText(u) {
     if (u.printer_accesses.length === 0) return [h('span', { class: 'muted' }, 'No printer')];
@@ -306,7 +297,9 @@ export function adminPage(ctx) {
               h('th', { scope: 'col' }, 'Added'),
               h('th', { scope: 'col' }, h('span', { class: 'visually-hidden' }, 'Actions')))),
             h('tbody', null, st.users.map((u) => h('tr', null,
-              h('td', { class: 'strong nowrap' }, u.name),
+              h('td', { class: 'strong nowrap' }, u.name,
+                u.is_admin && h('span', { class: 'tag' }, 'Admin'),
+                isMe(u) && h('span', { class: 'muted normal' }, ' (you)')),
               h('td', null, accessesText(u)),
               h('td', { class: 'nowrap muted' }, shortDate(u.created_at)),
               h('td', { class: 'log__actions' },
@@ -432,7 +425,9 @@ export function adminPage(ctx) {
 
     function paintAccess(error = '', saved = '') {
       const picker = accessPicker(u.printer_accesses);
-      const warn = h('p', { class: 'notice', hidden: true }, `With no printer, ${u.name} is signed out everywhere and their invite stops working. Their history is kept.`);
+      const warn = h('p', { class: 'notice', hidden: true }, isMe(u)
+        ? 'With no printer, you’re signed out everywhere, this device included, and lose admin access until someone gives you a printer and a recovery invite.'
+        : `With no printer, ${u.name} is signed out everywhere and their invite stops working. Their history is kept.`);
       picker.el.addEventListener('change', () => {
         warn.hidden = picker.value().length > 0;
       });
@@ -443,6 +438,8 @@ export function adminPage(ctx) {
         submit.disabled = true;
         try {
           u = await api.adminSetUserPrinters(u.id, picker.value());
+          // Own printers changed: Write and Settings show them, so reload /me.
+          if (isMe(u)) await ctx.refreshMe();
           await loadCore();
           paintAccess('', 'Saved.');
           loadSessions();
@@ -495,7 +492,7 @@ export function adminPage(ctx) {
               })))),
         active.length > 1 && h('div', { class: 'tool__actions' },
           confirmButton('Sign out everywhere', {
-            question: `Sign ${u.name} out of every device?`,
+            question: isMe(u) ? 'Sign yourself out of every device, this one included?' : `Sign ${u.name} out of every device?`,
             yes: 'Sign out all',
             run: async () => {
               await api.adminRevokeAllSessions(u.id);
