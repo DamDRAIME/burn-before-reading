@@ -30,7 +30,7 @@ type Store interface {
 
 type CreateParams struct {
 	PrinterID uuid.UUID
-	SenderID  *uuid.UUID
+	SenderID  uuid.UUID
 	SenderIP  *net.IP
 	Source    Source
 	Content   string

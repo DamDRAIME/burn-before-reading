@@ -4,7 +4,7 @@
 - [X] Authenticate submitters: invite → session token (`bbr_session_…`, SHA-256 in `user_sessions.token_hash`); only they can POST /user/messages
 - [X] Admin role: `users.is_admin`; `/admin` routes sit behind `RequireUserToken` + `RequireAdmin` (403 for non-admins). Replaces the static `ADMIN_TOKEN`
 - [ ] Admins are subject to `revokeAccessIfNoPrinters`: an admin with no printer loses all sessions, and recovery invites return 409 for users with no printer. Exempt admins from both
-- [ ] Record which admin sent an admin message (`sender_id` is NULL today) now that admins have an identity
+- [X] Record which admin sent an admin message (`sender_id` is NULL today) now that admins have an identity
 - [X] Per-printer API tokens: SHA-256 hash in `printers.token_hash`, plain token returned once on create, `RequirePrinterToken` middleware puts the printer ID in the request context
 - [X] Printer routes take the printer ID from the token instead of the URL (`/printer/heartbeat`, `/printer/messages/oldest/claim`)
 - [X] Token rotation endpoint: `POST /admin/printers/{id}/rotate_token`

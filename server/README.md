@@ -154,7 +154,7 @@ erDiagram
     messages {
         UUID id PK
         BIGINT sequence_number UK "identity, used for ordering lists"
-        UUID sender_id FK "NULL for admin messages"
+        UUID sender_id FK "the user, or the admin who sent it"
         INET sender_ip
         VARCHAR source "web or admin"
         UUID printer_id FK
@@ -198,7 +198,7 @@ Membership changes lock the affected `printers` rows (`SELECT … FOR UPDATE`) s
 ### What changed with the users table
 User accounts replaced the anonymous, free-text sender:
 
-- **`messages.sender_name` was removed** and replaced by `sender_id`, a foreign key to `users`. The `sender_name` field still exists in API responses, but it is now read from `users.name` (it is `null` for admin messages).
+- **`messages.sender_name` was removed** and replaced by `sender_id`, a foreign key to `users`. The `sender_name` field still exists in API responses, but it is now read from `users.name`. Admin messages record the admin who sent them, so `sender_name` is never `null`.
 - **Submitting requires a session.** The public `POST /api/v1/messages` and `GET /api/v1/messages/{id}` routes are gone. Users now call `POST /api/v1/user/messages` and `GET /api/v1/user/messages/{id}` with their session token, and can only read their own messages.
 - **The request body changed** from `{sender, body}` to `{printer_id, content}`. The sender comes from the session token, so it can't be impersonated.
 - **Printers are no longer open to anyone who knows their UUID.** `user_printers` decides which printers each user may send to.
@@ -242,7 +242,7 @@ API->>API: sanitize and validate content (1..500)<br/>source=web, capture sender
 API->>DB: INSERT sender_id, status=awaiting_approval
 API-->>U: 201 {message}
 A->>API: POST /api/v1/admin/messages {printer_id, content}
-API->>DB: INSERT sender_id=NULL, source=admin, status=pending
+API->>DB: INSERT sender_id=admin, source=admin, status=pending
 API-->>A: 201
 Note over U,P: 2. Moderation
 A->>API: GET /api/v1/admin/messages?status=awaiting_approval

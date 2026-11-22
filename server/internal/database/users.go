@@ -906,7 +906,8 @@ func revokeStaleJoinTokens(ctx context.Context, tx pgx.Tx, userID uuid.UUID) err
 	return nil
 }
 
-// rejectQueuedMessages rejects userID's messages to printerIDs that haven't been printed yet
+// rejectQueuedMessages rejects userID's web messages to printerIDs that haven't been printed yet.
+// Admin messages are kept: they don't depend on the admin's printer memberships.
 func rejectQueuedMessages(ctx context.Context, tx pgx.Tx, userID uuid.UUID, printerIDs []uuid.UUID) error {
 	if len(printerIDs) == 0 {
 		return nil
@@ -916,10 +917,12 @@ func rejectQueuedMessages(ctx context.Context, tx pgx.Tx, userID uuid.UUID, prin
 		`UPDATE messages
 		SET status = $1, moderated_at = NOW()
 		WHERE sender_id = $2
-			AND printer_id = ANY($3::uuid[])
-			AND status = ANY($4)`,
+			AND source = $3
+			AND printer_id = ANY($4::uuid[])
+			AND status = ANY($5)`,
 		messages.StatusRejected,
 		userID,
+		messages.SourceWeb,
 		printerIDs,
 		[]messages.Status{messages.StatusPending, messages.StatusAwaitingApproval},
 	)

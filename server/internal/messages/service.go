@@ -60,18 +60,18 @@ func NewService(store Store, printers PrinterGetter, access PrinterAccessChecker
 
 type SubmitParams struct {
 	PrinterID uuid.UUID
-	SenderID  *uuid.UUID
+	SenderID  uuid.UUID
 	SenderIP  *net.IP
 	Source    Source
 	Content   string
 }
 
 func (s *Service) Submit(ctx context.Context, params SubmitParams) (*Message, error) {
+	if params.SenderID == uuid.Nil {
+		return nil, ErrMissingSender
+	}
 	if params.Source != SourceAdmin {
-		if params.SenderID == nil {
-			return nil, ErrMissingSender
-		}
-		canSend, err := s.access.CanSend(ctx, *params.SenderID, params.PrinterID)
+		canSend, err := s.access.CanSend(ctx, params.SenderID, params.PrinterID)
 		if err != nil {
 			return nil, err
 		}
