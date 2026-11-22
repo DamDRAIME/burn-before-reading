@@ -1,0 +1,160 @@
+import { fill, h } from './dom.js';
+import { installDither } from './dither.js';
+import { api, ApiError, onForbidden, onUnauthorized } from './api.js';
+import { auth } from './auth.js';
+import { writePage } from './pages/write.js';
+import { historyPage } from './pages/history.js';
+import { adminPage } from './pages/admin.js';
+import { adminOnlyPage, joinPage, notFoundPage, sessionErrorPage } from './pages/access.js';
+import { openSettings } from './pages/settings.js';
+import { closePane } from './pane.js';
+
+const root = document.getElementById('app');
+const state = { me: null };
+let current = null;
+let renderId = 0;
+let renderQueued = false;
+
+export function navigate(path, { replace = false } = {}) {
+  if (replace) window.history.replaceState(null, '', path);
+  else window.history.pushState(null, '', path);
+  scheduleRender();
+}
+
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  queueMicrotask(() => {
+    renderQueued = false;
+    render();
+  });
+}
+
+onUnauthorized(() => {
+  closePane();
+  auth.setUserToken(null);
+  state.me = null;
+  scheduleRender();
+});
+
+// Demoted while signed in (is_admin is read on every request): reload /me, which re-renders
+// /admin as "admins only" and Write as a regular user's.
+onForbidden(() => {
+  if (!state.me?.is_admin) return;
+  closePane();
+  state.me = null;
+  scheduleRender();
+});
+
+// Internal links: <a href="/history" data-link>
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('a[data-link]');
+  if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (link.getAttribute('href') !== window.location.pathname) navigate(link.getAttribute('href'));
+});
+
+// Back/forward. In-page anchors (#queue) also fire popstate: those keep the page as it is.
+let renderedPath = null;
+window.addEventListener('popstate', () => {
+  if (window.location.pathname !== renderedPath) scheduleRender();
+});
+
+/** Loads /user/me when a user token is stored. Returns an error to show, if any. */
+async function loadSession() {
+  if (!auth.userToken() || state.me) return null;
+  try {
+    state.me = await api.me();
+    return null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return null; // token cleared by the 401 handler
+    return err;
+  }
+}
+
+function nav(ctx, path) {
+  const link = (href, label, extra) => h('a', { href, 'data-link': true, class: 'nav__link', 'aria-current': path === href ? 'page' : null }, label, extra);
+  const who = ctx.me?.name;
+  return h('header', { class: 'site-header' },
+    h('a', { href: '/', 'data-link': true, class: 'site-header__brand' }, 'Burn Before Reading'),
+    ctx.me && h('nav', { class: 'nav', 'aria-label': 'Main' },
+      link('/', 'Write'),
+      link('/history', 'History'),
+      ctx.isAdmin && link('/admin', 'Admin', h('span', { class: 'nav__count', 'data-admin-count': true })),
+      h('button', { type: 'button', class: 'nav__who nav__who--button', 'aria-haspopup': 'dialog', title: 'Settings', onClick: () => openSettings(ctx) },
+        h('span', { class: 'avatar', 'aria-hidden': 'true' }, who.slice(0, 1).toUpperCase()),
+        who,
+        h('span', { class: 'visually-hidden' }, ': settings'))));
+}
+
+async function render() {
+  const id = ++renderId;
+  const sessionError = await loadSession();
+  if (id !== renderId) return;
+
+  // A pane belongs to the page it was opened on.
+  if (window.location.pathname !== renderedPath) closePane();
+  current?.destroy?.();
+  current = null;
+
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  const ctx = {
+    me: state.me,
+    isUser: Boolean(state.me),
+    isAdmin: Boolean(state.me?.is_admin),
+    navigate,
+    signedIn() {
+      state.me = null;
+      scheduleRender();
+    },
+    signedOut() {
+      closePane();
+      auth.setUserToken(null);
+      state.me = null;
+      scheduleRender();
+    },
+    /** The admin page reports how many messages wait for approval: shown in the nav and the tab title. */
+    setAdminWaiting(n) {
+      const count = root.querySelector('[data-admin-count]');
+      if (count) {
+        fill(count, n > 0 && [` · ${n}`, h('span', { class: 'visually-hidden' }, ' waiting for approval')]);
+      }
+      if (current?.title === 'Admin' || !current) {
+        document.title = `${n > 0 ? `(${n}) ` : ''}Admin · Burn Before Reading`;
+      }
+    },
+    /**
+     * After a change to the account (joined, left, quiet hours): reloads /me and lets
+     * the page refresh what it shows, without re-rendering it (a draft stays put).
+     */
+    async refreshMe() {
+      const me = await api.me();
+      state.me = me;
+      ctx.me = me;
+      // Admin rights changed: the nav and the pages differ, so render again.
+      if (Boolean(me.is_admin) !== ctx.isAdmin) {
+        scheduleRender();
+        return me;
+      }
+      current?.meChanged?.(me);
+      return me;
+    },
+  };
+
+  let page;
+  if (sessionError) page = sessionErrorPage(ctx, sessionError, scheduleRender);
+  else if (path === '/join') page = joinPage(ctx);
+  else if (path === '/admin') page = ctx.isAdmin ? adminPage(ctx) : ctx.isUser ? adminOnlyPage(ctx) : joinPage(ctx);
+  else if (path === '/history') page = ctx.isUser ? historyPage(ctx) : joinPage(ctx);
+  else if (path === '/') page = ctx.isUser ? writePage(ctx) : joinPage(ctx);
+  else page = notFoundPage(ctx);
+
+  document.title = page.title ? `${page.title} · Burn Before Reading` : 'Burn Before Reading';
+  root.replaceChildren(h('div', { class: 'shell' }, nav(ctx, path), page.el));
+  current = page;
+  renderedPath = window.location.pathname;
+  window.scrollTo(0, 0);
+}
+
+installDither();
+render();

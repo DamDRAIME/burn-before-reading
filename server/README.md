@@ -74,8 +74,8 @@ Each link between a user and a printer has a **role**, `member` or `owner`. Both
 | Ownership | `PUT` / `DELETE /admin/printers/{id}/owner` | — | — |
 
 1. **Getting an account.**
-   - *With a join token (normal path):* the person's device sends `POST /users/join {join_token, name, device_name}`. In one transaction, the API checks the name is free on that printer, creates the account as a member of the printer, uses up the token and returns a session token (`201`). An unusable token gets `401`. A taken name gets `409`, and the token remains usable.
-   - *Created by the admin:* `POST /admin/users {name, printer_ids}` returns a `bbr_invite_…` invite, valid 2 days, which the person claims with `POST /users/claim {invite, device_name}`. An unknown, expired or already used invite gets `401`.
+   - *With a join token (normal path):* the person's device sends `POST /users/join {join_token, username, device_name}`. In one transaction, the API checks the name is free on that printer, creates the account as a member of the printer, uses up the token and returns a session token (`201`). An unusable token gets `401`. A taken name gets `409`, and the token remains usable.
+   - *Created by the admin:* `POST /admin/users {username, printer_ids}` returns a `bbr_invite_…` invite, valid 2 days, which the person claims with `POST /users/claim {invite, device_name}`. An unknown, expired or already used invite gets `401`.
 2. **More devices.** `POST /user/invite` returns an invite for the caller's own account, valid **15 minutes** (meant to be shown as a QR code). Another device claims it with `POST /users/claim`. Existing sessions are kept. The account comes only from the session, never from the request.
 3. **Sessions.** A user has one session per device. `GET /user/sessions` lists them, with `current: true` on the one making the request. `DELETE /user/sessions/{id}` revokes one (`404` for someone else's session); revoking the current one logs out. The admin can list and revoke them too. Each session's `last_used_at` is updated when it authenticates a request, at most once every 5 minutes.
 4. **Joining another printer.** A signed-in user sends `POST /user/memberships {join_token}`. The account becomes a member of the token's printer, and the response is the updated `/me`. A token that can't be used gets `400` (not `401`: the session is fine). Being already on that printer, or a name clash there, gets `409`. In both cases the token remains usable. Whoever uses a token joins **as themselves**; the owner sees who it was (`used_by`) in the token list and can remove them.
@@ -218,12 +218,12 @@ participant DB as Postgres
 participant P as Printer agent
 Note over U,P: 0. Onboarding
 alt join token (from the printer's owner or the admin)
-U->>API: POST /api/v1/users/join {join_token, name, device_name}
+U->>API: POST /api/v1/users/join {join_token, username, device_name}
 API->>DB: find usable token, lock its printer<br/>name free on that printer? (409)
 API->>DB: INSERT users, mark token used,<br/>INSERT user_printers (member), INSERT user_sessions
 API-->>U: 201 {token}
 else account created by the admin
-A->>API: POST /api/v1/admin/users {name, printer_ids}
+A->>API: POST /api/v1/admin/users {username, printer_ids}
 API->>DB: INSERT users (invite_hash, invite_expires_at)<br/>INSERT user_printers
 API-->>A: 201 {user, invite}
 U->>API: POST /api/v1/users/claim {invite, device_name}
@@ -352,7 +352,7 @@ Printers, users and join tokens are listed newest first.
 |---|---|---|---|
 | `GET` | `/health` | | `200 OK` if the database answers, otherwise `500` |
 | `POST` | `/api/v1/users/claim` | `{"invite", "device_name"}` | `200 {"token"}` |
-| `POST` | `/api/v1/users/join` | `{"join_token", "name", "device_name"}` | `201 {"token"}`: a new account, member of the token's printer |
+| `POST` | `/api/v1/users/join` | `{"join_token", "username", "device_name"}` | `201 {"token"}`: a new account, member of the token's printer |
 
 ### Admin routes
 All prefixed with `/api/v1/admin`, with the session token of an [admin](#admins). Other users get `403`.
@@ -368,7 +368,7 @@ All prefixed with `/api/v1/admin`, with the session token of an [admin](#admins)
 | `PATCH` | `/messages/{id}/reject` | | `200 message` (`awaiting_approval` → `rejected`) |
 | `PATCH` | `/messages/{id}/requeue` | | `200 message` (`failed` → `pending`) |
 
-Admin message responses include `sender_ip`, `source`, `attempts` and `last_error`, which user and printer responses leave out.
+Admin message responses include `sender_ip`, `attempts` and `last_error`, which user and printer responses leave out. Every response includes `source` (`web`, or `admin` for a message an admin sent through `POST /admin/messages`), so an admin sees in their own history which messages skipped moderation.
 
 **Printers**
 
@@ -394,7 +394,7 @@ Quiet hours are `"HH:MM"` strings and may cross midnight (`"22:00"` to `"07:00"`
 
 | Method | Route | Body | Response |
 |---|---|---|---|
-| `POST` | `/users` | `{"name", "printer_ids"?}` | `201 user` with `invite` |
+| `POST` | `/users` | `{"username", "printer_ids"?}` | `201 user` with `invite` |
 | `GET` | `/users` | | `200 [user]` |
 | `GET` | `/users/{id}` | | `200 user` |
 | `PUT` | `/users/{id}/printers` | `{"printer_accesses": [{"printer_id", "role"}]}` (required; replaces all links; `[]` removes all access) | `200 user` |
@@ -423,7 +423,7 @@ All prefixed with `/api/v1/user`, with the user's session token.
 
 | Method | Route | Body | Response |
 |---|---|---|---|
-| `GET` | `/me` | | `200 {id, name, printer_accesses: [{printer_id, role}]}` |
+| `GET` | `/me` | | `200 {id, name, is_admin, printer_accesses: [{printer_id, role}]}` |
 | `GET` | `/printers` | | `200 [printer]`, the printers this user may send to |
 | `GET` | `/messages` | | `200 [message]`, only the caller's, with [list parameters](#list-query-parameters) |
 | `POST` | `/messages` | `{"printer_id", "content"}` | `201 message`, status `awaiting_approval` |
@@ -500,6 +500,10 @@ The seeded printers and users have fixed, readable dev tokens. They must never b
 go run .
 ```
 
+Set `WEB_DIR` to serve the website from the same origin (see [web/README.md](../web/README.md)):
+```shell
+WEB_DIR=../web go run .
+```
 Only `DATABASE_URL` is required (`ADDR` defaults to `:8080`). With the seed data, Dave is the admin: the admin examples below use his session.
 
 Submit a message as Dave:
@@ -531,7 +535,7 @@ curl -s -X POST localhost:8080/api/v1/users/claim \
 Sign up with Marc's join token, then redeem another one from an existing account (Heidi):
 ```shell
 curl -s -X POST localhost:8080/api/v1/users/join \
-  -H 'Content-Type: application/json' -d '{"join_token":"bbr_join_dev_marc","name":"Judy","device_name":"Judy phone"}' | jq
+  -H 'Content-Type: application/json' -d '{"join_token":"bbr_join_dev_marc","username":"Judy","device_name":"Judy phone"}' | jq
 curl -s -X POST localhost:8080/api/v1/user/printers/44444444-4444-4444-4444-444444444444/join_tokens \
   -H 'Authorization: Bearer bbr_session_dev_marc' | jq
 curl -s -X POST localhost:8080/api/v1/user/memberships -H 'Authorization: Bearer bbr_session_dev_heidi' \

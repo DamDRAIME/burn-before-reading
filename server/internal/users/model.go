@@ -27,6 +27,8 @@ type User struct {
 
 	Name string
 
+	IsAdmin bool
+
 	PrinterAccesses []PrinterAccess
 
 	CreatedAt     time.Time

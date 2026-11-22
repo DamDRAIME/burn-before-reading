@@ -48,6 +48,7 @@ const sessionColumns = `
 const userColumns = `
 	users.id,
 	users.name,
+	users.is_admin,
 	users.created_at,
 	users.last_updated_at,
 	ARRAY(
@@ -92,6 +93,7 @@ func scanUser(row pgx.Row) (users.User, error) {
 	err := row.Scan(
 		&u.ID,
 		&u.Name,
+		&u.IsAdmin,
 		&u.CreatedAt,
 		&u.LastUpdatedAt,
 		&u.PrinterAccesses,

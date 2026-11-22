@@ -74,6 +74,7 @@ type messagePublicResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	SequenceNumber int64      `json:"sequence_number"`
 	SenderName     string     `json:"sender_name"`
+	Source         string     `json:"source"`
 	PrinterID      uuid.UUID  `json:"printer_id"`
 	Content        string     `json:"content"`
 	Status         string     `json:"status"`
@@ -412,6 +413,7 @@ func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
 		ID:             msg.ID,
 		SequenceNumber: msg.SequenceNumber,
 		SenderName:     msg.SenderName,
+		Source:         string(msg.Source),
 		PrinterID:      msg.PrinterID,
 		Content:        msg.Content,
 		Status:         string(msg.Status),
