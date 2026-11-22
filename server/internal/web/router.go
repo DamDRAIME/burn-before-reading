@@ -8,11 +8,11 @@ import (
 
 // NewAPIRouter builds the /api/v1 routes.
 // Kept separate from `main.go` so tests can exercise routing and auth without a database.
-func NewAPIRouter(mHandler *MessagesHandler, pHandler *PrintersHandler, uHandler *UsersHandler, adminToken string, pAuth printerAuthenticator, uAuth userAuthenticator, ownerChecker printerOwnershipChecker, logger *slog.Logger) chi.Router {
+func NewAPIRouter(mHandler *MessagesHandler, pHandler *PrintersHandler, uHandler *UsersHandler, pAuth printerAuthenticator, uAuth userAuthenticator, ownerChecker printerOwnershipChecker, logger *slog.Logger) chi.Router {
 	r := chi.NewRouter()
 	uHandler.RegisterPublicRoutes(r)
 	r.Route("/admin", func(r chi.Router) {
-		r.Use(RequireAdminToken(adminToken))
+		r.Use(RequireUserToken(uAuth, logger), RequireAdmin)
 		mHandler.RegisterAdminRoutes(r)
 		pHandler.RegisterAdminRoutes(r)
 		uHandler.RegisterAdminRoutes(r)

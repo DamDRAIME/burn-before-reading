@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -15,19 +14,20 @@ import (
 
 // -- Admin --
 
-// RequireAdminToken rejects requests that don't carry "Authorization: Bearer <token>".
-// Placeholder until real admin authentication (session/JWT with a role) exists.
-func RequireAdminToken(token string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			got, ok := bearerTokenFromHeader(r)
-			if !ok || token == "" || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
-				writeErrorResponse(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
+// RequireAdmin rejects requests that don't come from a Admin user.
+func RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isAdminFromContext(r.Context()) {
+			writeErrorResponse(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isAdminFromContext(ctx context.Context) bool {
+	isAdmin, _ := ctx.Value(isAdminKey{}).(bool)
+	return isAdmin
 }
 
 // -- Printer --
@@ -71,11 +71,12 @@ func printerIDFromContext(ctx context.Context) (uuid.UUID, bool) {
 // -- User --
 
 type userAuthenticator interface {
-	Authenticate(ctx context.Context, token string) (uuid.UUID, uuid.UUID, error)
+	Authenticate(ctx context.Context, token string) (uuid.UUID, uuid.UUID, bool, error)
 }
 
 type userIDKey struct{}
 type sessionIDKey struct{}
+type isAdminKey struct{}
 
 // RequireUserToken rejects requests that don't carry "Authorization: Bearer <token>".
 func RequireUserToken(auth userAuthenticator, logger *slog.Logger) func(http.Handler) http.Handler {
@@ -86,7 +87,7 @@ func RequireUserToken(auth userAuthenticator, logger *slog.Logger) func(http.Han
 				writeErrorResponse(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
-			userID, sessionID, err := auth.Authenticate(r.Context(), token)
+			userID, sessionID, isAdmin, err := auth.Authenticate(r.Context(), token)
 			if errors.Is(err, users.ErrInvalidSessionToken) {
 				writeErrorResponse(w, http.StatusUnauthorized, "unauthorized")
 				return
@@ -98,6 +99,7 @@ func RequireUserToken(auth userAuthenticator, logger *slog.Logger) func(http.Han
 			}
 			ctx := context.WithValue(r.Context(), userIDKey{}, userID)
 			ctx = context.WithValue(ctx, sessionIDKey{}, sessionID)
+			ctx = context.WithValue(ctx, isAdminKey{}, isAdmin)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

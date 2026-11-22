@@ -430,19 +430,25 @@ func (s *UserStore) IsOwner(ctx context.Context, userID, printerID uuid.UUID) (b
 
 // -- Sessions ----
 
-func (s *UserStore) GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, uuid.UUID, error) {
+func (s *UserStore) GetUserIDBySessionHash(ctx context.Context, hash []byte) (uuid.UUID, uuid.UUID, bool, error) {
 	var userID uuid.UUID
 	var sessionID uuid.UUID
+	var isAdmin bool
 	err := s.pool.QueryRow(
 		ctx,
-		`SELECT user_id, id FROM user_sessions WHERE revoked_at IS NULL AND token_hash = $1`,
+		`SELECT s.user_id, s.id, u.is_admin
+		FROM user_sessions s
+			JOIN users u
+				ON u.id = s.user_id
+		WHERE s.revoked_at IS NULL 
+			AND s.token_hash = $1`,
 		hash,
-	).Scan(&userID, &sessionID)
+	).Scan(&userID, &sessionID, &isAdmin)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return userID, sessionID, users.ErrInvalidSessionToken
+		return userID, sessionID, isAdmin, users.ErrInvalidSessionToken
 	}
 	if err != nil {
-		return userID, sessionID, fmt.Errorf("get user by session hash: %w", err)
+		return userID, sessionID, isAdmin, fmt.Errorf("get user by session hash: %w", err)
 	}
 	if _, err = s.pool.Exec(
 		ctx,
@@ -451,7 +457,7 @@ func (s *UserStore) GetUserIDBySessionHash(ctx context.Context, hash []byte) (uu
 	); err != nil {
 		s.logger.Warn("failed to update session last_used_at", "session_id", sessionID, "error", err)
 	}
-	return userID, sessionID, nil
+	return userID, sessionID, isAdmin, nil
 }
 
 func (s *UserStore) ListSessions(ctx context.Context, userID uuid.UUID) ([]*users.Session, error) {

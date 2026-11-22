@@ -16,7 +16,7 @@ TRUNCATE messages, user_sessions, user_printers, users, printers, printer_join_t
 -- token_hash is sha256('bbr_printer_dev_<name>')
 
 INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezone, error, created_at, last_heartbeat_at, token_hash) VALUES
-    ('11111111-1111-1111-1111-111111111111', 'Epson TM-T20III', 'Alice and Dave', NULL,    NULL,   'Europe/Brussels', NULL,        NOW() - INTERVAL '30 days', NOW() - INTERVAL '10 seconds', sha256('bbr_printer_dev_alice')),
+    ('11111111-1111-1111-1111-111111111111', 'Epson TM-T20III', 'Alice and Dave', NULL,    NULL,   NULL, NULL,        NOW() - INTERVAL '30 days', NOW() - INTERVAL '10 seconds', sha256('bbr_printer_dev_alice')),
     ('22222222-2222-2222-2222-222222222222', 'Epson TM-T20III', 'Eve Office',           '22:00', '07:00', 'Europe/Brussels', NULL,        NOW() - INTERVAL '20 days', NOW() - INTERVAL '8 hours',    sha256('bbr_printer_dev_bob')),
     ('33333333-3333-3333-3333-333333333333', 'Star TSP143',     'Frank',         '12:00', '13:00', 'Europe/Brussels', 'paper jam', NOW() - INTERVAL '60 days', NOW() - INTERVAL '14 days',    sha256('bbr_printer_dev_carol')),
     ('44444444-4444-4444-4444-444444444444', 'Rongta RT-20',    'Marc',          '12:00', '13:00', 'Europe/Brussels', NULL,        NOW() - INTERVAL '60 days', NOW() - INTERVAL '14 days',    sha256('bbr_printer_dev_marc'));
@@ -31,13 +31,13 @@ INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezon
 --          she signed up with a join token from Dave
 -- Names are unique per printer (case-insensitive), not globally.
 
-INSERT INTO users (id, name, invite_hash, invite_expires_at, created_at) VALUES
-    ('aaaaaaaa-0000-0000-0000-000000000001', 'Dave',  NULL,                            NULL,                      NOW() - INTERVAL '25 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000002', 'Eve',   NULL,                            NULL,                      NOW() - INTERVAL '15 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000003', 'Frank', NULL,                            NULL,                      NOW() - INTERVAL '40 days'),
-    ('aaaaaaaa-0000-0000-0000-000000000004', 'Grace', sha256('bbr_invite_dev_grace'),  NOW() + INTERVAL '2 days', NOW() - INTERVAL '1 hour'),
-    ('aaaaaaaa-0000-0000-0000-000000000005', 'Marc',  NULL,                            NULL,                      NOW() - INTERVAL '1 hour'),
-    ('aaaaaaaa-0000-0000-0000-000000000006', 'Heidi', NULL,                            NULL,                      NOW() - INTERVAL '2 hours');
+INSERT INTO users (id, name, is_admin, invite_hash, invite_expires_at, created_at) VALUES
+    ('aaaaaaaa-0000-0000-0000-000000000001', 'Dave',  TRUE, NULL,                            NULL,                      NOW() - INTERVAL '25 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', 'Eve',   FALSE, NULL,                            NULL,                      NOW() - INTERVAL '15 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000003', 'Frank', FALSE, NULL,                            NULL,                      NOW() - INTERVAL '40 days'),
+    ('aaaaaaaa-0000-0000-0000-000000000004', 'Grace', FALSE, sha256('bbr_invite_dev_grace'),  NOW() + INTERVAL '2 days', NOW() - INTERVAL '1 hour'),
+    ('aaaaaaaa-0000-0000-0000-000000000005', 'Marc',  FALSE, NULL,                            NULL,                      NOW() - INTERVAL '1 hour'),
+    ('aaaaaaaa-0000-0000-0000-000000000006', 'Heidi', FALSE, NULL,                            NULL,                      NOW() - INTERVAL '2 hours');
 
 INSERT INTO user_printers (user_id, printer_id, role) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'owner'),

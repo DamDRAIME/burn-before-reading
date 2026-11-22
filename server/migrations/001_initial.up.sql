@@ -49,6 +49,8 @@ CREATE TABLE users (
 
     name VARCHAR(20) NOT NULL,
 
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+
     invite_hash BYTEA UNIQUE,
     invite_expires_at TIMESTAMPTZ,
 
