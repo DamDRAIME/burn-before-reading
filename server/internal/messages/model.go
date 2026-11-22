@@ -45,7 +45,7 @@ type Message struct {
 	ID             uuid.UUID
 	SequenceNumber int64
 
-	SenderName *string
+	SenderName string
 	SenderIP   *net.IP
 	Source     Source
 

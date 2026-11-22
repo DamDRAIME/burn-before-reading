@@ -29,6 +29,8 @@ INSERT INTO printers (id, model, recipient_name, quiet_start, quiet_end, timezon
 --   Marc:  active session, may send to his printer only
 --   Heidi: active session, member of Alice/Dave's printer only (removing her revokes her sessions);
 --          she signed up with a join token from Dave
+--   Ivan:  admin, active session, member of Eve's office printer (admins need a printer to keep their sessions)
+-- Admins: Dave and Ivan (is_admin = TRUE)
 -- Names are unique per printer (case-insensitive), not globally.
 
 INSERT INTO users (id, name, is_admin, invite_hash, invite_expires_at, created_at) VALUES
@@ -37,7 +39,8 @@ INSERT INTO users (id, name, is_admin, invite_hash, invite_expires_at, created_a
     ('aaaaaaaa-0000-0000-0000-000000000003', 'Frank', FALSE, NULL,                            NULL,                      NOW() - INTERVAL '40 days'),
     ('aaaaaaaa-0000-0000-0000-000000000004', 'Grace', FALSE, sha256('bbr_invite_dev_grace'),  NOW() + INTERVAL '2 days', NOW() - INTERVAL '1 hour'),
     ('aaaaaaaa-0000-0000-0000-000000000005', 'Marc',  FALSE, NULL,                            NULL,                      NOW() - INTERVAL '1 hour'),
-    ('aaaaaaaa-0000-0000-0000-000000000006', 'Heidi', FALSE, NULL,                            NULL,                      NOW() - INTERVAL '2 hours');
+    ('aaaaaaaa-0000-0000-0000-000000000006', 'Heidi', FALSE, NULL,                            NULL,                      NOW() - INTERVAL '2 hours'),
+    ('aaaaaaaa-0000-0000-0000-000000000007', 'Ivan',  TRUE,  NULL,                            NULL,                      NOW() - INTERVAL '50 days');
 
 INSERT INTO user_printers (user_id, printer_id, role) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'owner'),
@@ -49,7 +52,8 @@ INSERT INTO user_printers (user_id, printer_id, role) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '44444444-4444-4444-4444-444444444444', 'member'),
     ('aaaaaaaa-0000-0000-0000-000000000002', '44444444-4444-4444-4444-444444444444', 'member'),
     ('aaaaaaaa-0000-0000-0000-000000000003', '44444444-4444-4444-4444-444444444444', 'member'),
-    ('aaaaaaaa-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'member');
+    ('aaaaaaaa-0000-0000-0000-000000000006', '11111111-1111-1111-1111-111111111111', 'member'),
+    ('aaaaaaaa-0000-0000-0000-000000000007', '22222222-2222-2222-2222-222222222222', 'member');
 
 -- token_hash is sha256('bbr_session_dev_<name>')
 INSERT INTO user_sessions (id, user_id, device_name, token_hash, created_at, revoked_at) VALUES
@@ -57,7 +61,8 @@ INSERT INTO user_sessions (id, user_id, device_name, token_hash, created_at, rev
     ('cccccccc-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000002', 'Eve''s laptop',   sha256('bbr_session_dev_eve'),   NOW() - INTERVAL '15 days', NULL),
     ('cccccccc-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000003', 'Old tablet',      sha256('bbr_session_dev_frank'), NOW() - INTERVAL '40 days', NOW() - INTERVAL '10 days'),
     ('cccccccc-0000-0000-0000-000000000005', 'aaaaaaaa-0000-0000-0000-000000000005', 'Marc''s desktop', sha256('bbr_session_dev_marc'),  NOW() - INTERVAL '1 hour',  NULL),
-    ('cccccccc-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-000000000006', 'Heidi''s phone',  sha256('bbr_session_dev_heidi'), NOW() - INTERVAL '2 hours', NULL);
+    ('cccccccc-0000-0000-0000-000000000006', 'aaaaaaaa-0000-0000-0000-000000000006', 'Heidi''s phone',  sha256('bbr_session_dev_heidi'), NOW() - INTERVAL '2 hours', NULL),
+    ('cccccccc-0000-0000-0000-000000000007', 'aaaaaaaa-0000-0000-0000-000000000007', 'Ivan''s laptop',   sha256('bbr_session_dev_ivan'),  NOW() - INTERVAL '50 days', NULL);
 
 -- -- Printer join tokens --------------------------------------
 -- token_hash is sha256('bbr_join_dev_<name>'); created_by NULL = created by the admin.
@@ -71,8 +76,10 @@ INSERT INTO printer_join_tokens (id, printer_id, created_by, used_by, token_hash
     ('dddddddd-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', NULL,                                   NULL,                                   sha256('bbr_join_dev_eve'),   NOW() - INTERVAL '1 day',      NOW() + INTERVAL '1 day',             NULL,                       NOW() - INTERVAL '20 hours');
 
 -- -- Messages -------------------------------------------------
--- sender_id is NULL for admin messages; the API derives sender_name from users.name.
+-- sender_id is always set: the user, or the admin who sent it (source = 'admin', from Dave or Ivan).
+-- The API derives sender_name from users.name.
 -- Every web message targets a printer its sender is linked to in user_printers.
+-- Admin messages skip moderation (moderated_at NULL) and may target any printer.
 -- Timestamps follow the status lifecycle:
 --   awaiting_approval -> pending (moderated_at) -> claimed (claimed_at) -> processed (processed_at) -> printed (printed_at)
 --   awaiting_approval -> rejected (moderated_at)
@@ -84,17 +91,22 @@ INSERT INTO printer_join_tokens (id, printer_id, created_by, used_by, token_hash
 -- awaiting_approval: not moderated yet
 INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, printer_id) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '203.0.113.10', 'web', 'Happy birthday Alice!',         'awaiting_approval', NOW() - INTERVAL '5 minutes', '11111111-1111-1111-1111-111111111111'),
-    ('aaaaaaaa-0000-0000-0000-000000000002', '203.0.113.11', 'web', 'Can you pick up milk tonight?', 'awaiting_approval', NOW() - INTERVAL '3 minutes', '22222222-2222-2222-2222-222222222222');
+    ('aaaaaaaa-0000-0000-0000-000000000002', '203.0.113.11', 'web', 'Can you pick up milk tonight?', 'awaiting_approval', NOW() - INTERVAL '3 minutes', '22222222-2222-2222-2222-222222222222'),
+    ('aaaaaaaa-0000-0000-0000-000000000005', '203.0.113.30',  'web', 'Plant needs watering',          'awaiting_approval', NOW() - INTERVAL '8 minutes', '44444444-4444-4444-4444-444444444444'),
+    ('aaaaaaaa-0000-0000-0000-000000000006', '203.0.113.31',  'web', E'Hi Alice & Dave!\nThanks for having me', 'awaiting_approval', NOW() - INTERVAL '6 minutes', '11111111-1111-1111-1111-111111111111'),
+    ('aaaaaaaa-0000-0000-0000-000000000003', '198.51.100.21', 'web', 'Lunch on Friday?',              'awaiting_approval', NOW() - INTERVAL '2 minutes', '44444444-4444-4444-4444-444444444444');
 
 -- pending: approved (or sent by an admin) and waiting in the printer queue (oldest first)
 INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, moderated_at, printer_id) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '203.0.113.12', 'web',   'Good morning!',                'pending', NOW() - INTERVAL '40 minutes', NOW() - INTERVAL '38 minutes', '11111111-1111-1111-1111-111111111111'),
     ('aaaaaaaa-0000-0000-0000-000000000002', '203.0.113.13', 'web',   E'Dinner at 7?\nBring dessert', 'pending', NOW() - INTERVAL '20 minutes', NOW() - INTERVAL '19 minutes', '11111111-1111-1111-1111-111111111111'),
-    (NULL,                                   '127.0.0.1',    'admin', 'Maintenance tonight at 22:00', 'pending', NOW() - INTERVAL '15 minutes', NULL,                         '22222222-2222-2222-2222-222222222222');
+    ('aaaaaaaa-0000-0000-0000-000000000007', '127.0.0.1',    'admin', 'Maintenance tonight at 22:00', 'pending', NOW() - INTERVAL '15 minutes', NULL,                         '22222222-2222-2222-2222-222222222222'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', '203.0.113.32', 'web',   'Coffee break?',                'pending', NOW() - INTERVAL '30 minutes', NOW() - INTERVAL '28 minutes', '44444444-4444-4444-4444-444444444444'),
+    ('aaaaaaaa-0000-0000-0000-000000000007', '127.0.0.1',    'admin', 'Paper roll on its way',        'pending', NOW() - INTERVAL '10 minutes', NULL,                         '33333333-3333-3333-3333-333333333333');
 
 -- pending (retry): a previous print attempt failed but attempts < 3
 INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, claimed_at, processed_at, attempts, last_error, printer_id) VALUES
-    (NULL, '127.0.0.1', 'admin', 'Retry me please', 'pending', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour', 1, 'printer offline', '11111111-1111-1111-1111-111111111111');
+    ('aaaaaaaa-0000-0000-0000-000000000001', '127.0.0.1', 'admin', 'Retry me please', 'pending', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour', 1, 'printer offline', '11111111-1111-1111-1111-111111111111');
 
 -- claimed: picked up by the printer, not processed yet
 INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, moderated_at, claimed_at, attempts, printer_id) VALUES
@@ -107,11 +119,16 @@ INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at,
 -- printed: done
 INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, printed_at, attempts, printer_id) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '203.0.113.17', 'web',   'Welcome home!',        'printed', NOW() - INTERVAL '1 day',    NOW() - INTERVAL '1 day', NOW() - INTERVAL '23 hours', NOW() - INTERVAL '23 hours', NOW() - INTERVAL '23 hours', 1, '11111111-1111-1111-1111-111111111111'),
-    (NULL,                                   '127.0.0.1',    'admin', 'Meeting moved to 3pm', 'printed', NOW() - INTERVAL '10 hours', NULL,                    NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  2, '22222222-2222-2222-2222-222222222222');
+    ('aaaaaaaa-0000-0000-0000-000000000007', '127.0.0.1',    'admin', 'Meeting moved to 3pm',   'printed', NOW() - INTERVAL '10 hours', NULL,                    NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  NOW() - INTERVAL '9 hours',  2, '22222222-2222-2222-2222-222222222222'),
+    ('aaaaaaaa-0000-0000-0000-000000000002', '203.0.113.33', 'web',   'Report is on your desk', 'printed', NOW() - INTERVAL '2 days',   NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days',   NOW() - INTERVAL '2 days',   NOW() - INTERVAL '2 days',   1, '22222222-2222-2222-2222-222222222222'),
+    ('aaaaaaaa-0000-0000-0000-000000000005', '203.0.113.34', 'web',   'Note to self: call mum', 'printed', NOW() - INTERVAL '3 days',   NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days',   NOW() - INTERVAL '3 days',   NOW() - INTERVAL '3 days',   1, '44444444-4444-4444-4444-444444444444'),
+    ('aaaaaaaa-0000-0000-0000-000000000001', '203.0.113.35', 'web',   'Nice desk, Marc!',       'printed', NOW() - INTERVAL '4 days',   NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days',   NOW() - INTERVAL '4 days',   NOW() - INTERVAL '4 days',   1, '44444444-4444-4444-4444-444444444444'),
+    ('aaaaaaaa-0000-0000-0000-000000000001', '127.0.0.1',    'admin', 'Server update done',     'printed', NOW() - INTERVAL '5 days',   NULL,                    NOW() - INTERVAL '5 days',   NOW() - INTERVAL '5 days',   NOW() - INTERVAL '5 days',   1, '44444444-4444-4444-4444-444444444444');
 
 -- rejected: refused at moderation
 INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, moderated_at, printer_id) VALUES
-    ('aaaaaaaa-0000-0000-0000-000000000003', '198.51.100.20', 'web', 'BUY CHEAP STUFF NOW!!!', 'rejected', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '2 hours', '33333333-3333-3333-3333-333333333333');
+    ('aaaaaaaa-0000-0000-0000-000000000003', '198.51.100.20', 'web', 'BUY CHEAP STUFF NOW!!!', 'rejected', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '2 hours', '33333333-3333-3333-3333-333333333333'),
+    ('aaaaaaaa-0000-0000-0000-000000000006', '203.0.113.36',  'web', 'aaaaaaaaaaaaaaaaaaaa',   'rejected', NOW() - INTERVAL '90 minutes', NOW() - INTERVAL '80 minutes', '11111111-1111-1111-1111-111111111111');
 
 -- failed: exhausted retries (attempts = maxAttempts = 3); requeue it with PATCH /admin/messages/{id}/requeue
 INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, attempts, last_error, printer_id) VALUES

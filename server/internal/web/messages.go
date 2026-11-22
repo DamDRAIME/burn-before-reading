@@ -73,7 +73,7 @@ type messageCreateRequest struct {
 type messagePublicResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	SequenceNumber int64      `json:"sequence_number"`
-	SenderName     *string    `json:"sender_name"`
+	SenderName     string     `json:"sender_name"`
 	PrinterID      uuid.UUID  `json:"printer_id"`
 	Content        string     `json:"content"`
 	Status         string     `json:"status"`
@@ -88,7 +88,7 @@ type messagePublicResponse struct {
 type messageAdminResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	SequenceNumber int64      `json:"sequence_number"`
-	SenderName     *string    `json:"sender_name"`
+	SenderName     string     `json:"sender_name"`
 	SenderIP       *net.IP    `json:"sender_ip"`
 	Source         string     `json:"source"`
 	PrinterID      uuid.UUID  `json:"printer_id"`
@@ -142,6 +142,11 @@ func (h *MessagesHandler) list(
 // -- Admin Handlers ----
 
 func (h *MessagesHandler) submitByAdmin(w http.ResponseWriter, r *http.Request) {
+	senderID, ok := requireUserID(w, r, h.logger)
+	if !ok {
+		return
+	}
+
 	var req messageCreateRequest
 	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
@@ -165,7 +170,7 @@ func (h *MessagesHandler) submitByAdmin(w http.ResponseWriter, r *http.Request) 
 
 	submitParams := messages.SubmitParams{
 		PrinterID: printerID,
-		SenderID:  nil,
+		SenderID:  senderID,
 		SenderIP:  &senderIP,
 		Source:    messages.SourceAdmin,
 		Content:   req.Content,
@@ -365,7 +370,7 @@ func (h *MessagesHandler) submit(w http.ResponseWriter, r *http.Request) {
 
 	submitParams := messages.SubmitParams{
 		PrinterID: printerID,
-		SenderID:  &senderID,
+		SenderID:  senderID,
 		SenderIP:  &senderIP,
 		Source:    messages.SourceWeb,
 		Content:   req.Content,

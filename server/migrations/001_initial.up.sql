@@ -137,7 +137,7 @@ CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sequence_number BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
 
-    sender_id UUID REFERENCES users(id), -- NULL for messages created by Admin
+    sender_id UUID NOT NULL REFERENCES users(id),
     sender_ip INET NOT NULL,
     source VARCHAR(20) NOT NULL DEFAULT 'web',
 
@@ -182,8 +182,7 @@ CREATE INDEX idx_messages_pending
     WHERE status = 'pending';
 
 CREATE INDEX idx_messages_sender
-    ON messages (sender_id, sequence_number)
-    WHERE sender_id IS NOT NULL;
+    ON messages (sender_id, sequence_number);
 
 CREATE TRIGGER trg_messages_last_updated_at
     BEFORE UPDATE ON messages
