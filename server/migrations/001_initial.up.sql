@@ -155,10 +155,12 @@ CREATE TABLE messages (
     last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     attempts SMALLINT NOT NULL DEFAULT 0,
-    last_error TEXT,
+    review_last_error TEXT,
+    print_last_error TEXT,
 
     CONSTRAINT messages_status_check CHECK (
         status IN (
+            'awaiting_review'
             'awaiting_approval',
             'pending',
             'claimed',
@@ -180,6 +182,14 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_pending
     ON messages (printer_id, created_at)
     WHERE status = 'pending';
+
+CREATE INDEX idx_messages_awaiting_review
+    ON messages (created_at)
+    WHERE status = 'awaiting_review';
+
+CREATE INDEX idx_messages_awaiting_approval
+    ON messages (created_at)
+    WHERE status = 'awaiting_approval';
 
 CREATE INDEX idx_messages_sender
     ON messages (sender_id, sequence_number);

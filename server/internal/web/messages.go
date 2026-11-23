@@ -87,22 +87,23 @@ type messagePublicResponse struct {
 }
 
 type messageAdminResponse struct {
-	ID             uuid.UUID  `json:"id"`
-	SequenceNumber int64      `json:"sequence_number"`
-	SenderName     string     `json:"sender_name"`
-	SenderIP       *net.IP    `json:"sender_ip"`
-	Source         string     `json:"source"`
-	PrinterID      uuid.UUID  `json:"printer_id"`
-	Content        string     `json:"content"`
-	Status         string     `json:"status"`
-	CreatedAt      time.Time  `json:"created_at"`
-	ModeratedAt    *time.Time `json:"moderated_at"`
-	ClaimedAt      *time.Time `json:"claimed_at"`
-	ProcessedAt    *time.Time `json:"processed_at"`
-	PrintedAt      *time.Time `json:"printed_at"`
-	LastUpdatedAt  time.Time  `json:"last_updated_at"`
-	Attempts       int        `json:"attempts"`
-	LastError      *string    `json:"last_error"`
+	ID              uuid.UUID  `json:"id"`
+	SequenceNumber  int64      `json:"sequence_number"`
+	SenderName      string     `json:"sender_name"`
+	SenderIP        *net.IP    `json:"sender_ip"`
+	Source          string     `json:"source"`
+	PrinterID       uuid.UUID  `json:"printer_id"`
+	Content         string     `json:"content"`
+	Status          string     `json:"status"`
+	CreatedAt       time.Time  `json:"created_at"`
+	ModeratedAt     *time.Time `json:"moderated_at"`
+	ClaimedAt       *time.Time `json:"claimed_at"`
+	ProcessedAt     *time.Time `json:"processed_at"`
+	PrintedAt       *time.Time `json:"printed_at"`
+	LastUpdatedAt   time.Time  `json:"last_updated_at"`
+	Attempts        int        `json:"attempts"`
+	ReviewLastError *string    `json:"review_last_error"`
+	PrintLastError  *string    `json:"print_last_error"`
 }
 
 // -- Handlers ----
@@ -428,22 +429,23 @@ func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
 
 func toMessageAdminResponse(msg *messages.Message) messageAdminResponse {
 	return messageAdminResponse{
-		ID:             msg.ID,
-		SequenceNumber: msg.SequenceNumber,
-		SenderName:     msg.SenderName,
-		SenderIP:       msg.SenderIP,
-		Source:         string(msg.Source),
-		PrinterID:      msg.PrinterID,
-		Content:        msg.Content,
-		Status:         string(msg.Status),
-		CreatedAt:      msg.CreatedAt,
-		ModeratedAt:    msg.ModeratedAt,
-		ClaimedAt:      msg.ClaimedAt,
-		ProcessedAt:    msg.ProcessedAt,
-		PrintedAt:      msg.PrintedAt,
-		Attempts:       msg.Attempts,
-		LastError:      msg.LastError,
-		LastUpdatedAt:  msg.LastUpdatedAt,
+		ID:              msg.ID,
+		SequenceNumber:  msg.SequenceNumber,
+		SenderName:      msg.SenderName,
+		SenderIP:        msg.SenderIP,
+		Source:          string(msg.Source),
+		PrinterID:       msg.PrinterID,
+		Content:         msg.Content,
+		Status:          string(msg.Status),
+		CreatedAt:       msg.CreatedAt,
+		ModeratedAt:     msg.ModeratedAt,
+		ClaimedAt:       msg.ClaimedAt,
+		ProcessedAt:     msg.ProcessedAt,
+		PrintedAt:       msg.PrintedAt,
+		LastUpdatedAt:   msg.LastUpdatedAt,
+		Attempts:        msg.Attempts,
+		ReviewLastError: msg.ReviewLastError,
+		PrintLastError:  msg.PrintLastError,
 	}
 }
 

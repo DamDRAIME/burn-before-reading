@@ -60,8 +60,9 @@ type Message struct {
 	PrintedAt     *time.Time
 	LastUpdatedAt time.Time
 
-	Attempts  int
-	LastError *string
+	Attempts        int
+	ReviewLastError *string
+	PrintLastError  *string
 
 	PrinterID uuid.UUID
 }

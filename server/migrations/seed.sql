@@ -83,7 +83,7 @@ INSERT INTO printer_join_tokens (id, printer_id, created_by, used_by, token_hash
 -- Timestamps follow the status lifecycle:
 --   awaiting_approval -> pending (moderated_at) -> claimed (claimed_at) -> processed (processed_at) -> printed (printed_at)
 --   awaiting_approval -> rejected (moderated_at)
---   claimed/processed -> pending (retry, attempts < 3) or failed (attempts >= 3), with last_error set
+--   claimed/processed -> pending (retry, attempts < 3) or failed (attempts >= 3), with print_last_error set
 --
 -- Note: the claimed and processed rows below become stale once they are older than claimTimeout
 -- (2 minutes), so the API's claim reaper will release them shortly after it starts.
@@ -105,7 +105,7 @@ INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at,
     ('aaaaaaaa-0000-0000-0000-000000000007', '127.0.0.1',    'admin', 'Paper roll on its way',        'pending', NOW() - INTERVAL '10 minutes', NULL,                         '33333333-3333-3333-3333-333333333333');
 
 -- pending (retry): a previous print attempt failed but attempts < 3
-INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, claimed_at, processed_at, attempts, last_error, printer_id) VALUES
+INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, claimed_at, processed_at, attempts, print_last_error, printer_id) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001', '127.0.0.1', 'admin', 'Retry me please', 'pending', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour', 1, 'printer offline', '11111111-1111-1111-1111-111111111111');
 
 -- claimed: picked up by the printer, not processed yet
@@ -131,5 +131,5 @@ INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at,
     ('aaaaaaaa-0000-0000-0000-000000000006', '203.0.113.36',  'web', 'aaaaaaaaaaaaaaaaaaaa',   'rejected', NOW() - INTERVAL '90 minutes', NOW() - INTERVAL '80 minutes', '11111111-1111-1111-1111-111111111111');
 
 -- failed: exhausted retries (attempts = maxAttempts = 3); requeue it with PATCH /admin/messages/{id}/requeue
-INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, attempts, last_error, printer_id) VALUES
+INSERT INTO messages (sender_id, sender_ip, source, content, status, created_at, moderated_at, claimed_at, processed_at, attempts, print_last_error, printer_id) VALUES
     ('aaaaaaaa-0000-0000-0000-000000000003', '203.0.113.19', 'web', 'This one never made it', 'failed', NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days', NOW() - INTERVAL '15 days', 3, 'paper jam', '33333333-3333-3333-3333-333333333333');

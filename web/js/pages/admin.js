@@ -256,7 +256,7 @@ export function adminPage(ctx) {
                 m.source === 'admin' && h('span', { class: 'tag', title: 'Sent as admin: skipped moderation' }, 'Admin')),
               h('td', { class: 'log__content', title: m.content }, m.content),
               h('td', null, statusCell(m)),
-              h('td', { class: 'nowrap muted', title: m.last_error ? `Last error: ${m.last_error}` : null }, when(m)),
+              h('td', { class: 'nowrap muted', title: m.print_last_error ? `Last error: ${m.print_last_error}` : null }, when(m)),
               h('td', { class: 'log__actions' },
                 m.status === 'failed' && h('button', { type: 'button', class: 'btn btn--outline btn--sm', disabled: st.busy.has(m.id), onClick: () => act(m, 'requeue') }, 'Requeue'))))))),
       (st.page > 0 || st.rowsMore) && h('div', { class: 'pager' },

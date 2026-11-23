@@ -63,7 +63,8 @@ const messageColumns = `
 	printed_at,
 	last_updated_at,
 	attempts,
-	last_error
+	review_last_error,
+	print_last_error
 `
 
 func scanMessage(row pgx.Row) (messages.Message, error) {
@@ -85,7 +86,8 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.PrintedAt,
 		&msg.LastUpdatedAt,
 		&msg.Attempts,
-		&msg.LastError,
+		&msg.ReviewLastError,
+		&msg.PrintLastError,
 	)
 
 	return msg, err
@@ -244,7 +246,7 @@ func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, printerID
 		ctx,
 		`UPDATE messages
 		SET status = CASE WHEN attempts < $1 THEN $2 ELSE $3 END,
-			last_error = $4
+			print_last_error = $4
 		WHERE id = $5 AND status = ANY($6) AND printer_id = $7
 		RETURNING `+messageColumns,
 		maxAttempts,
@@ -315,7 +317,7 @@ func (s *MessageStore) ReleaseStaleClaims(ctx context.Context, timeout time.Dura
 		ctx,
 		`UPDATE messages
 		SET status = CASE WHEN attempts < $1 THEN $2 ELSE $3 END,
-			last_error = 'claim timed out'
+			print_last_error = 'claim timed out'
 		WHERE status = ANY($4)
 			AND claimed_at < NOW() - make_interval(secs => $5)`,
 		maxAttempts,
