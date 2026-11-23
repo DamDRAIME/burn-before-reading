@@ -37,7 +37,7 @@
 - [X] Names are unique per printer, case-insensitive (`ensureNameFreeOnPrinters`, under `lockPrinters`); not globally, to avoid name probing and squatting
 - [X] Users list and revoke their own sessions (`GET /user/sessions` with `current`, `DELETE /user/sessions/{id}`), and leave a printer (`DELETE /user/memberships/{printerID}`, 409 for the owner)
 - [X] Admin invite reissue is account recovery: revokes all sessions unless `{"revoke_sessions": false}`; 409 for a user with no printer
-- [ ] Rate-limit the unauthenticated `POST /users/join` and `POST /users/claim` per IP (tokens are 130-bit, so this is about abuse, not guessing)
+- [ ] Rate-limit the unauthenticated `POST /users/join` and `POST /users/claim` per IP (tokens are 130-bit, so this is about abuse, not guessing) -> Will be using a reverse proxy with Cloudflare
 - [ ] Dormant accounts (no printer left) accumulate: an admin route to delete accounts, and an admin view of join tokens across printers
 - [ ] Renaming accounts: must run the per-printer name check on all of the user's printers
 - [ ] Add `httptest` tests for the users handlers (the lifecycle was checked end to end with curl against a seeded database)
@@ -85,7 +85,7 @@
 - [X] Strip control characters from printer error strings (`failed`, `heartbeat`); a NUL byte made Postgres reject the update (500)
 - [ ] Limit the length of printer error strings (`last_error`, `printers.error`); only the 16 KB body limit applies today
 - [ ] Rate limiting per user and per IP
-- [ ] Only use middleware.RealIP behind a trusted reverse proxy (X-Forwarded-For is spoofable)
+- [X] Only use middleware.RealIP behind a trusted reverse proxy (X-Forwarded-For is spoofable) -> Relies on CloudFlare to set/overwrite `CF-Connecting-IP` in headers
 - [X] Public GET /messages/{id} leaks sender_ip to anyone with the UUID: use a slimmer public response type (route since replaced by the authenticated GET /user/messages/{id})
 
 ## Smaller fixes

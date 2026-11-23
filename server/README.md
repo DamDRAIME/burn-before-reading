@@ -504,7 +504,20 @@ Set `WEB_DIR` to serve the website from the same origin (see [web/README.md](../
 ```shell
 WEB_DIR=../web go run .
 ```
-Only `DATABASE_URL` is required (`ADDR` defaults to `:8080`). With the seed data, Dave is the admin: the admin examples below use his session.
+Environment variables:
+
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | yes | Postgres connection string |
+| `TRUST_CLOUDFLARE` | no | `true` or `false` (anything `strconv.ParseBool` accepts), defaults to `false`. `true` takes the client IP from the `CF-Connecting-IP` header; `false` uses the TCP peer address. Use `false` in development |
+| `ADDR` | no | Listen address, defaults to `:8080` |
+| `WEB_DIR` | no | Directory of the website to serve from the same origin |
+
+The client IP is used in the request logs and stored as `sender_ip` on messages. Only set `TRUST_CLOUDFLARE=true` when the server can be reached through Cloudflare alone (Cloudflare Tunnel, or a firewall that only allows [Cloudflare's IP ranges](https://www.cloudflare.com/ips/)). The header is set by the client otherwise, so anyone connecting directly could choose their logged IP.
+
+Per-IP rate limiting of the unauthenticated `POST /users/join` and `POST /users/claim` is done by a Cloudflare rate limiting rule, not by the API.
+
+With the seed data, Dave is the admin: the admin examples below use his session.
 
 Submit a message as Dave:
 ```shell

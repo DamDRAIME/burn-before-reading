@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -55,6 +56,15 @@ func run(logger *slog.Logger) error {
 	if addr == "" {
 		addr = ":8080"
 	}
+	trustCFEnv := os.Getenv("TRUST_CLOUDFLARE")
+	trustCloudflare := false
+	if trustCFEnv != "" {
+		parsed, err := strconv.ParseBool(trustCFEnv)
+		if err != nil {
+			return fmt.Errorf("TRUST_CLOUDFLARE=%q: must be true or false", trustCFEnv)
+		}
+		trustCloudflare = parsed
+	}
 
 	// Initialize database connection pool
 	pool, err := database.NewPostgresPool(ctx, dbURL)
@@ -77,7 +87,7 @@ func run(logger *slog.Logger) error {
 	// Set up router
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(web.ClientIP(trustCloudflare))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(10 * time.Second))
@@ -113,7 +123,7 @@ func run(logger *slog.Logger) error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", addr)
+		logger.Info("listening", "addr", addr, "trust_cloudflare", trustCloudflare)
 		serverErr <- srv.ListenAndServe()
 	}()
 
