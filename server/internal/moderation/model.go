@@ -1,8 +1,24 @@
 package moderation
 
+type FlagCode string
+
+const (
+	Link           FlagCode = "link"
+	Email          FlagCode = "email"
+	CardNumber     FlagCode = "card_number"
+	IBAN           FlagCode = "iban"
+	BannedWord     FlagCode = "banned_word"
+	Shouting       FlagCode = "shouting"
+	DarkGlyphs     FlagCode = "dark_glyphs"
+	RepeatedChars  FlagCode = "repeated_chars"
+	Whitespace     FlagCode = "whitespace"
+	LLMFlagged     FlagCode = "llm_flagged"
+	LLMUnavailable FlagCode = "llm_unavailable"
+)
+
 type Flag struct {
-	Code   int
-	Detail string
+	Code   FlagCode `json:"code"`
+	Detail string   `json:"detail"`
 }
 
 type Verdict string
