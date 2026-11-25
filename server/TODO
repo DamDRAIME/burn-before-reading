@@ -57,7 +57,7 @@
 - [X] Add naive automated moderation: `awaiting_review` status, background review worker woken by `Submit`, rule flags stored in `moderation_flags`, `moderated_by` (`auto` / `admin`)
 - [X] Moderation rules (`internal/moderation`): links, emails, card numbers (Luhn), IBANs (mod-97), banned words after normalization, shouting, dark glyphs, repeated characters, whitespace
 - [X] Admin switch to disable moderation: `GET` / `PUT /admin/moderation`, in memory, enabled again on restart
-- [ ] LLM classifier: `llm` service (llama.cpp + Qwen3Guard-Gen 0.6B GGUF) in docker-compose, check the model's real reply format, then `guard.go` replacing `NoClassifier`, with a per-call timeout in `review()`
+- [ ] LLM classifier: `llm` service (llama.cpp + Qwen3Guard-Gen 0.6B GGUF) in docker-compose, check the model's real reply format, then `classifier.go` replacing `NoClassifier`, with a per-call timeout in `review()`
 - [ ] Environment variables: `MODERATION_LLM_URL` (falls back to `NoClassifier` with a startup warning), `MODERATION_WORDLIST` (calls `LoadWordListFile`), optionally `MODERATION_ENABLED`
 
 ## Database
