@@ -147,6 +147,9 @@ CREATE TABLE messages (
 
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
 
+    moderation_flags JSONB NOT NULL DEFAULT '[]',
+    moderated_by VARCHAR(10),
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     moderated_at TIMESTAMPTZ,
     claimed_at TIMESTAMPTZ,
@@ -155,12 +158,11 @@ CREATE TABLE messages (
     last_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     attempts SMALLINT NOT NULL DEFAULT 0,
-    review_last_error TEXT,
-    print_last_error TEXT,
+    last_error TEXT,
 
     CONSTRAINT messages_status_check CHECK (
         status IN (
-            'awaiting_review'
+            'awaiting_review',
             'awaiting_approval',
             'pending',
             'claimed',
@@ -176,6 +178,17 @@ CREATE TABLE messages (
             'admin',
             'web'
         )
+    ),
+
+    CONSTRAINT messages_moderated_by_check CHECK (
+        moderated_by IN (
+            'auto',
+            'admin'
+        )
+    ),
+
+    CONSTRAINT messages_moderation_flags_check CHECK (
+        jsonb_typeof(moderation_flags) = 'array'
     )
 );
 

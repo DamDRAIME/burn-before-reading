@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"bbr/internal/messages"
+	"bbr/internal/moderation"
 	"bbr/internal/printers"
 )
 
@@ -33,13 +34,15 @@ type transition struct {
 	to   messages.Status
 }
 
-// transitionTimestampColumn maps a status transition (from -> to) to the timestamp column stamped on entry.
+// transitionSetFragment maps a status transition (from -> to) to a SET fragment.
 // Column names can't be bound as query parameters, so they come only from this fixed map.
-var transitionTimestampColumn = map[transition]string{
-	{messages.StatusAwaitingApproval, messages.StatusPending}:  "moderated_at",
-	{messages.StatusAwaitingApproval, messages.StatusRejected}: "moderated_at",
-	{messages.StatusClaimed, messages.StatusProcessed}:         "processed_at",
-	{messages.StatusProcessed, messages.StatusPrinted}:         "printed_at",
+var transitionSetFragment = map[transition]string{
+	{messages.StatusAwaitingReview, messages.StatusPending}:    "moderated_at = NOW(), moderated_by = 'admin'",
+	{messages.StatusAwaitingReview, messages.StatusRejected}:   "moderated_at = NOW(), moderated_by = 'admin'",
+	{messages.StatusAwaitingApproval, messages.StatusPending}:  "moderated_at = NOW(), moderated_by = 'admin'",
+	{messages.StatusAwaitingApproval, messages.StatusRejected}: "moderated_at = NOW(), moderated_by = 'admin'",
+	{messages.StatusClaimed, messages.StatusProcessed}:         "processed_at = NOW()",
+	{messages.StatusProcessed, messages.StatusPrinted}:         "printed_at = NOW()",
 	// pending → claimed: set by the claim endpoint directly, not by a status transition
 	// failed  → pending (requeue): nothing
 }
@@ -56,6 +59,8 @@ const messageColumns = `
 	printer_id,
 	content,
 	status,
+	moderation_flags,
+	moderated_by,
 	created_at,
 	moderated_at,
 	claimed_at,
@@ -63,8 +68,7 @@ const messageColumns = `
 	printed_at,
 	last_updated_at,
 	attempts,
-	review_last_error,
-	print_last_error
+	last_error
 `
 
 func scanMessage(row pgx.Row) (messages.Message, error) {
@@ -79,6 +83,8 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.PrinterID,
 		&msg.Content,
 		&msg.Status,
+		&msg.ModerationFlags,
+		&msg.ModeratedBy,
 		&msg.CreatedAt,
 		&msg.ModeratedAt,
 		&msg.ClaimedAt,
@@ -86,8 +92,7 @@ func scanMessage(row pgx.Row) (messages.Message, error) {
 		&msg.PrintedAt,
 		&msg.LastUpdatedAt,
 		&msg.Attempts,
-		&msg.ReviewLastError,
-		&msg.PrintLastError,
+		&msg.LastError,
 	)
 
 	return msg, err
@@ -184,16 +189,16 @@ func (s *MessageStore) TransitionStatusForPrinter(ctx context.Context, id uuid.U
 }
 
 func (s *MessageStore) transitionStatus(ctx context.Context, id uuid.UUID, from, to messages.Status, printerID *uuid.UUID) (*messages.Message, error) {
-	// Determine the timestamp column to set based on the target status
-	setTimestampColumn := ""
-	if column, ok := transitionTimestampColumn[transition{from: from, to: to}]; ok {
-		setTimestampColumn += ", " + column + " = NOW()"
+	// Determine the SET fragment for the timestamp column to set based on the target status
+	setFragment := ""
+	if fragment, ok := transitionSetFragment[transition{from: from, to: to}]; ok {
+		setFragment += ", " + fragment
 	}
 
 	// Compare and swap in one atomic operation to ensure the status transition is safe and prevent race conditions
 	row := s.pool.QueryRow(
 		ctx,
-		`UPDATE messages SET status = $1`+setTimestampColumn+` WHERE id = $2 AND status = $3 AND ($4::uuid IS NULL OR printer_id = $4) RETURNING `+messageColumns,
+		`UPDATE messages SET status = $1`+setFragment+` WHERE id = $2 AND status = $3 AND ($4::uuid IS NULL OR printer_id = $4) RETURNING `+messageColumns,
 		to,
 		id,
 		from,
@@ -208,6 +213,37 @@ func (s *MessageStore) transitionStatus(ctx context.Context, id uuid.UUID, from,
 
 	if err != nil {
 		return nil, fmt.Errorf("transition message status: %w", err)
+	}
+
+	return &msg, nil
+}
+
+func (s *MessageStore) ApplyReview(ctx context.Context, id uuid.UUID, to messages.Status, flags []moderation.Flag) (*messages.Message, error) {
+	row := s.pool.QueryRow(
+		ctx,
+		`UPDATE messages
+		SET status = $1::text,
+			moderated_by = CASE WHEN $1 = $2 THEN $3 END,
+			moderation_flags = moderation_flags || COALESCE($4::jsonb, '[]'),
+			moderated_at = CASE WHEN $1 = $2 THEN NOW() END
+		WHERE id = $5 AND status = $6
+		RETURNING `+messageColumns,
+		to,
+		messages.StatusPending,
+		moderation.ModeratorAuto,
+		flags,
+		id,
+		messages.StatusAwaitingReview,
+	)
+
+	msg, err := scanMessage(row)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, s.resolveNoRowsUpdated(ctx, id, nil, "apply auto review")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("apply auto review: %w", err)
 	}
 
 	return &msg, nil
@@ -241,18 +277,18 @@ func (s *MessageStore) List(ctx context.Context, params messages.ListParams) ([]
 	return msgs, nil
 }
 
-func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, printerID uuid.UUID, errorMsg string) (*messages.Message, error) {
+func (s *MessageStore) MarkAsFailed(ctx context.Context, id uuid.UUID, printerID uuid.UUID, errMsg string) (*messages.Message, error) {
 	row := s.pool.QueryRow(
 		ctx,
 		`UPDATE messages
 		SET status = CASE WHEN attempts < $1 THEN $2 ELSE $3 END,
-			print_last_error = $4
+			last_error = $4
 		WHERE id = $5 AND status = ANY($6) AND printer_id = $7
 		RETURNING `+messageColumns,
 		maxAttempts,
 		messages.StatusPending,
 		messages.StatusFailed,
-		errorMsg,
+		errMsg,
 		id,
 		[]messages.Status{messages.StatusClaimed, messages.StatusProcessed},
 		printerID,
@@ -317,7 +353,7 @@ func (s *MessageStore) ReleaseStaleClaims(ctx context.Context, timeout time.Dura
 		ctx,
 		`UPDATE messages
 		SET status = CASE WHEN attempts < $1 THEN $2 ELSE $3 END,
-			print_last_error = 'claim timed out'
+			last_error = 'claim timed out'
 		WHERE status = ANY($4)
 			AND claimed_at < NOW() - make_interval(secs => $5)`,
 		maxAttempts,

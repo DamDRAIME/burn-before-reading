@@ -54,7 +54,11 @@
 - [X] Set approved_at / claimed_at / printed_at on the matching transitions
 - [X] Add a RequeueMessage endpoint
 - [X] Add printers's endpoints
-- [ ] Add naive automated moderation
+- [X] Add naive automated moderation: `awaiting_review` status, background review worker woken by `Submit`, rule flags stored in `moderation_flags`, `moderated_by` (`auto` / `admin`)
+- [X] Moderation rules (`internal/moderation`): links, emails, card numbers (Luhn), IBANs (mod-97), banned words after normalization, shouting, dark glyphs, repeated characters, whitespace
+- [X] Admin switch to disable moderation: `GET` / `PUT /admin/moderation`, in memory, enabled again on restart
+- [ ] LLM classifier: `llm` service (llama.cpp + Qwen3Guard-Gen 0.6B GGUF) in docker-compose, check the model's real reply format, then `guard.go` replacing `NoClassifier`, with a per-call timeout in `review()`
+- [ ] Environment variables: `MODERATION_LLM_URL` (falls back to `NoClassifier` with a startup warning), `MODERATION_WORDLIST` (calls `LoadWordListFile`), optionally `MODERATION_ENABLED`
 
 ## Database
 - [X] Add an index column
@@ -102,4 +106,5 @@
 - [X] Run `gofmt` on `internal/web/auth.go` and `internal/web/mappers.go`
 - [ ] Add tests for the service layer using a fake Store (start with `printers.Service.Authenticate`: valid token, unknown token → ErrInvalidToken, store error passed through)
 - [ ] Add `httptest` tests for `RequirePrinterToken` and `RequireUserToken` with fake authenticators, including the 500 path (not covered by the manual curl tests)
+- [ ] `bearerTokenFromHeader` accepts an empty token (`Authorization: Bearer `) and passes `""` to the session lookup; reject it there
 - [X] Fill in the README "Server" section (replaced by the API reference and database diagram)

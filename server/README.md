@@ -8,11 +8,12 @@ Here are the main steps involved in submitting, processing, and, finally, printi
 
 1. The owner of a printer (or the admin) hands out a one-time **join token** for that printer. A new user signs up with it from their device and receives a **session token**; an existing user redeems it from their session to add the printer to their account. _(The admin can also create an account directly and hand out a one-time **invite**, which the user claims for a session token.)_
 2. The user can add more devices to their own account with a short-lived device invite.
-3. The user submits a message to one of their allowed recipients. The API stores it with the status `awaiting_approval`. _(Messages sent by an admin skip moderation and start as `pending`)_
-4. A moderator approves or rejects the message.
-5. The Raspberry Pi polls the API at regular intervals and claims the oldest `pending` message of its printer.
-6. The Raspberry Pi renders the message according to the printer's specificities and reports back.
-7. The printer prints the message.
+3. The user submits a message to one of their allowed recipients. The API stores it with the status `awaiting_review`. _(Messages sent by an admin skip moderation and start as `pending`)_
+4. A background job runs the [automated moderation](#moderation) on it: a message that passes goes to `pending`, anything else goes to `awaiting_approval` with the reasons attached.
+5. A moderator approves or rejects the messages in `awaiting_approval`.
+6. The Raspberry Pi polls the API at regular intervals and claims the oldest `pending` message of its printer.
+7. The Raspberry Pi renders the message according to the printer's specificities and reports back.
+8. The printer prints the message.
 
 ## Roles and authentication
 
@@ -160,6 +161,8 @@ erDiagram
         UUID printer_id FK
         TEXT content "1..500 chars"
         VARCHAR status "see Message states"
+        JSONB moderation_flags "list of {code, detail}, [] by default"
+        VARCHAR moderated_by "auto or admin, NULL until moderated"
         TIMESTAMPTZ created_at
         TIMESTAMPTZ moderated_at
         TIMESTAMPTZ claimed_at
@@ -174,11 +177,18 @@ erDiagram
 Indexes worth knowing about:
 
 - `idx_messages_pending (printer_id, created_at) WHERE status = 'pending'` serves the claim query.
+- `idx_messages_awaiting_review (created_at) WHERE status = 'awaiting_review'` and `idx_messages_awaiting_approval (created_at) WHERE status = 'awaiting_approval'` serve the review worker and the moderation queue.
 - `idx_messages_sender (sender_id, sequence_number)` serves a user's message list.
 - `uq_user_printers_one_owner_per_printer (printer_id) WHERE role = 'owner'` and `uq_user_printers_one_printer_per_owner (user_id) WHERE role = 'owner'` enforce the [ownership rules](#user-lifecycle).
 - `idx_printer_join_tokens_printer (printer_id, created_at DESC)` serves the join token lists.
 
 Membership changes lock the affected `printers` rows (`SELECT … FOR UPDATE`) so the per-printer name check can't race. Transactions always lock printers first, then the user, then links and tokens.
+
+### What changed with automated moderation
+- **New status:** `awaiting_review`. Web messages start there instead of `awaiting_approval`. `awaiting_approval` now holds only the messages a person has to decide on.
+- **New columns:** `moderation_flags` (why a message was held) and `moderated_by` (`auto` or `admin`). `moderated_at` keeps its meaning: when the message became `pending` or `rejected`.
+- **New admin routes:** `GET` and `PUT /admin/moderation`, to switch the automated moderation off and on.
+- **Admin message responses** include `moderation_flags` and `moderated_by`.
 
 ### What changed with join tokens
 - **Owners no longer create accounts.** `POST /user/printers/{id}/members` is gone. Owners create join tokens instead, and people sign up with them (`POST /users/join`) or, if they already have an account, redeem them (`POST /user/memberships`). This removes copies of the same person on different printers, and owners no longer receive anyone's login.
@@ -239,23 +249,30 @@ Note over U,P: 1. Submission
 U->>API: POST /api/v1/user/messages {printer_id, content}
 API->>DB: check user_printers (unknown pair → 404)
 API->>API: sanitize and validate content (1..500)<br/>source=web, capture sender_ip
-API->>DB: INSERT sender_id, status=awaiting_approval
+API->>DB: INSERT sender_id, status=awaiting_review
 API-->>U: 201 {message}
+API->>API: wake the review worker
 A->>API: POST /api/v1/admin/messages {printer_id, content}
 API->>DB: INSERT sender_id=admin, source=admin, status=pending
 API-->>A: 201
-Note over U,P: 2. Moderation
+Note over U,P: 2. Automated review (background worker)
+loop until no awaiting_review message is left
+API->>DB: SELECT oldest awaiting_review
+API->>API: moderation disabled? rules? classifier?
+API->>DB: UPDATE status=pending (moderated_by=auto, moderated_at)<br/>or status=awaiting_approval, append moderation_flags<br/>WHERE status=awaiting_review
+end
+Note over U,P: 3. Manual moderation
 A->>API: GET /api/v1/admin/messages?status=awaiting_approval
 API-->>A: 200 [messages]
 alt approve
 A->>API: PATCH /api/v1/admin/messages/{id}/approve
-API->>DB: UPDATE status=pending, moderated_at=now()<br/>WHERE status=awaiting_approval
+API->>DB: UPDATE status=pending, moderated_at=now(), moderated_by=admin<br/>WHERE status=awaiting_approval
 else reject
 A->>API: PATCH /api/v1/admin/messages/{id}/reject
-API->>DB: UPDATE status=rejected, moderated_at=now()<br/>WHERE status=awaiting_approval
+API->>DB: UPDATE status=rejected, moderated_at=now(), moderated_by=admin<br/>WHERE status=awaiting_approval
 end
 API-->>A: 200 (409 if status already changed)
-Note over U,P: 3. Printing
+Note over U,P: 4. Printing
 Note over API,P: The printer ID comes from the token (never from the URL).
 loop every few seconds
 P->>API: POST /api/v1/printer/heartbeat {error?}
@@ -281,7 +298,7 @@ API->>DB: UPDATE last_error,<br/>status = attempts < 3 ? pending : failed<br/>WH
 end
 end
 end
-Note over U,P: 4. Status check
+Note over U,P: 5. Status check
 U->>API: GET /api/v1/user/messages/{id}
 API-->>U: 200 {message} (404 if not the caller's)
 ```
@@ -290,9 +307,11 @@ API-->>U: 200 {message} (404 if not the caller's)
 ```mermaid
 stateDiagram-v2
 direction LR
-[*] --> awaiting_approval : submitted by a user
+[*] --> awaiting_review : submitted by a user
 [*] --> pending : submitted by an admin
-awaiting_approval --> pending : admin approves<br/>(moderated_at)
+awaiting_review --> pending : automated review passes,<br/>or moderation disabled<br/>(moderated_at, moderated_by=auto)
+awaiting_review --> awaiting_approval : a rule or the classifier<br/>flags it, or the classifier fails<br/>(moderation_flags)
+awaiting_approval --> pending : admin approves<br/>(moderated_at, moderated_by=admin)
 awaiting_approval --> rejected : admin rejects, or sender removed<br/>from the printer (moderated_at)
 pending --> rejected : sender removed<br/>from the printer (moderated_at)
 pending --> claimed : printer claims oldest job<br/>(claimed_at, attempts+1)
@@ -310,6 +329,40 @@ rejected --> [*]
 - **Retries:** a message is attempted at most 3 times. `attempts` is incremented on each claim.
 - **Stale claims:** a background job runs at startup and then every 5 minutes. It releases messages that have been `claimed` or `processed` for more than 2 minutes, with `last_error = 'claim timed out'`, following the same retry rule.
 - **Requeue:** `attempts` is not reset, so a requeued message that fails again goes straight back to `failed`.
+
+## Moderation
+
+Every web message is checked automatically before it can be printed. The automated moderation never rejects anything: it either lets a message through to `pending` or holds it in `awaiting_approval` for a person, with the reasons in `moderation_flags`. Admin messages skip it.
+
+**How it runs.** A background worker in the API reviews `awaiting_review` messages oldest first. `Submit` wakes it as soon as a message is stored, so a review takes about a second. It also runs at startup (messages left over from a restart) and every minute as a safety net. Each message goes through these steps, and the first one that applies decides:
+
+1. **Moderation disabled** by an admin: the message goes to `pending` with a `moderation_disabled` flag, so it's visible later that nothing checked it.
+2. **Rules** (`internal/moderation/rules.go`): if any rule fires, the message goes to `awaiting_approval` with one flag per rule, and the classifier is not called.
+3. **Classifier** (a small LLM, see below): `safe` goes to `pending`. `controversial` or `unsafe` goes to `awaiting_approval` with an `llm_flagged` flag giving the verdict and categories. A failed call also goes to `awaiting_approval`, with an `llm_unavailable` flag holding the error: a message never reaches `pending` without a verdict.
+
+A message an admin approves or rejects while it is still being reviewed keeps the admin's decision: the worker's update only applies to messages still in `awaiting_review`.
+
+**Rules.** They run on the stored content and only flag; thresholds are constants at the top of `rules.go`.
+
+| Flag | Fires on |
+|---|---|
+| `link` | URLs with `http(s)://`, `www.` hosts, bare domains with a common TLD (`example.fr`, `bit.ly`) |
+| `email` | email addresses |
+| `card_number` | 13 to 19 digits that pass the Luhn check; the detail only shows the last 4 digits |
+| `iban` | IBANs with a valid mod-97 checksum; the detail only shows the start and the end |
+| `banned_word` | whole words or phrases from the word list, after normalization (case, accents, leetspeak and letters repeated 3+ times are ignored, so `CONNAAARD` and `$h1t` match but `Scunthorpe` doesn't) |
+| `shouting` | 15 letters or more, at least 70% uppercase |
+| `dark_glyphs` | more than 10 box-drawing, block, geometric or braille characters (ASCII art that burns paper and heats the print head) |
+| `repeated_chars` | the same character more than 15 times in a row |
+| `whitespace` | more than 50% whitespace, more than 3 blank lines, or more than 15 whitespace characters in a row |
+
+The word list is `internal/moderation/banned_words.txt`, embedded in the binary: one entry per line, `#` for comments. `moderation.LoadWordListFile` can replace it at runtime, but no environment variable is wired to it yet.
+
+**Classifier.** The plan is Qwen3Guard-Gen 0.6B served by llama.cpp next to the API. It isn't connected yet: the API uses `moderation.NoClassifier`, which always fails. Until then, every message that passes the rules goes to `awaiting_approval` with `llm_unavailable: no classifier configured`, so all web messages still need a person.
+
+**Switching it off.** `PUT /admin/moderation {"enabled": false}` sends every new web message, and any message still in `awaiting_review`, straight to `pending`. Messages already in `awaiting_approval` stay there. The setting is kept in memory only: moderation is enabled again after a restart, so forgetting to switch it back on fails safe. Switching it off is logged as a warning with the admin's ID.
+
+**What senders see.** User responses show `awaiting_review` as `awaiting_approval` and never include `moderation_flags`, so a sender can't see which rule caught them and rephrase around it. Filtering their own list with `?status=awaiting_review` still tells the two apart.
 
 ## API reference
 
@@ -367,8 +420,10 @@ All prefixed with `/api/v1/admin`, with the session token of an [admin](#admins)
 | `PATCH` | `/messages/{id}/approve` | | `200 message` (`awaiting_approval` → `pending`) |
 | `PATCH` | `/messages/{id}/reject` | | `200 message` (`awaiting_approval` → `rejected`) |
 | `PATCH` | `/messages/{id}/requeue` | | `200 message` (`failed` → `pending`) |
+| `GET` | `/moderation` | | `200 {"enabled"}` |
+| `PUT` | `/moderation` | `{"enabled"}` (required) | `200 {"enabled"}`: switches the [automated moderation](#moderation) on or off |
 
-Admin message responses include `sender_ip`, `attempts` and `last_error`, which user and printer responses leave out. Every response includes `source` (`web`, or `admin` for a message an admin sent through `POST /admin/messages`), so an admin sees in their own history which messages skipped moderation.
+Admin message responses include `sender_ip`, `attempts`, `last_error`, `moderation_flags` and `moderated_by`, which user and printer responses leave out. Every response includes `source` (`web`, or `admin` for a message an admin sent through `POST /admin/messages`), so an admin sees in their own history which messages skipped moderation.
 
 **Printers**
 
@@ -426,7 +481,7 @@ All prefixed with `/api/v1/user`, with the user's session token.
 | `GET` | `/me` | | `200 {id, name, is_admin, printer_accesses: [{printer_id, role}]}` |
 | `GET` | `/printers` | | `200 [printer]`, the printers this user may send to |
 | `GET` | `/messages` | | `200 [message]`, only the caller's, with [list parameters](#list-query-parameters) |
-| `POST` | `/messages` | `{"printer_id", "content"}` | `201 message`, status `awaiting_approval` |
+| `POST` | `/messages` | `{"printer_id", "content"}` | `201 message`, status `awaiting_approval` (stored as `awaiting_review`, see [what senders see](#moderation)) |
 | `GET` | `/messages/{id}` | | `200 message`, `404` if it isn't the caller's |
 | `POST` | `/invite` | | `200 {"invite", "expires_at"}`: a 15-minute invite for the caller's own account, to claim on another device |
 | `GET` | `/sessions` | | `200 [session]` with `current`, newest first |
@@ -525,10 +580,18 @@ curl -s -X POST localhost:8080/api/v1/user/messages -H 'Authorization: Bearer bb
   -H 'Content-Type: application/json' -d '{"printer_id":"11111111-1111-1111-1111-111111111111","content":"Hello!"}' | jq
 ```
 
-Moderate it as an admin:
+Moderate it as an admin. The review worker moves it out of `awaiting_review` within a second or so; until a classifier is connected, it lands in `awaiting_approval` with an `llm_unavailable` flag:
 ```shell
 curl -s 'localhost:8080/api/v1/admin/messages?status=awaiting_approval' -H 'Authorization: Bearer bbr_session_dev_dave' | jq
 curl -s -X PATCH localhost:8080/api/v1/admin/messages/<id>/approve -H 'Authorization: Bearer bbr_session_dev_dave' | jq
+```
+
+Switch the automated moderation off, then on again:
+```shell
+curl -s -X PUT localhost:8080/api/v1/admin/moderation -H 'Authorization: Bearer bbr_session_dev_dave' \
+  -H 'Content-Type: application/json' -d '{"enabled":false}' | jq
+curl -s -X PUT localhost:8080/api/v1/admin/moderation -H 'Authorization: Bearer bbr_session_dev_dave' \
+  -H 'Content-Type: application/json' -d '{"enabled":true}' | jq
 ```
 
 Create a printer (the response contains its token, shown only once):

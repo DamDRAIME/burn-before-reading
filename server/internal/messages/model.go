@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"bbr/internal/moderation"
 	"net"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 type Status string
 
 const (
+	StatusAwaitingReview   Status = "awaiting_review"
 	StatusAwaitingApproval Status = "awaiting_approval"
 	StatusPending          Status = "pending"
 	StatusClaimed          Status = "claimed"
@@ -20,6 +22,7 @@ const (
 )
 
 var validStatuses = map[Status]bool{
+	StatusAwaitingReview:   true,
 	StatusAwaitingApproval: true,
 	StatusPending:          true,
 	StatusClaimed:          true,
@@ -53,6 +56,9 @@ type Message struct {
 
 	Status Status
 
+	ModerationFlags []moderation.Flag
+	ModeratedBy     *moderation.Moderator
+
 	CreatedAt     time.Time
 	ModeratedAt   *time.Time
 	ClaimedAt     *time.Time
@@ -60,9 +66,8 @@ type Message struct {
 	PrintedAt     *time.Time
 	LastUpdatedAt time.Time
 
-	Attempts        int
-	ReviewLastError *string
-	PrintLastError  *string
+	Attempts  int
+	LastError *string
 
 	PrinterID uuid.UUID
 }

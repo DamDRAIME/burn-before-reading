@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"bbr/internal/moderation"
 	"context"
 	"net"
 	"time"
@@ -19,9 +20,11 @@ type Store interface {
 
 	TransitionStatusForPrinter(ctx context.Context, id uuid.UUID, from, to Status, printerID uuid.UUID) (*Message, error)
 
+	ApplyReview(ctx context.Context, id uuid.UUID, to Status, flags []moderation.Flag) (*Message, error)
+
 	List(ctx context.Context, params ListParams) ([]*Message, error)
 
-	MarkAsFailed(ctx context.Context, id, printerID uuid.UUID, errorMsg string) (*Message, error)
+	MarkAsFailed(ctx context.Context, id, printerID uuid.UUID, errMsg string) (*Message, error)
 
 	ClaimOldest(ctx context.Context, printerID uuid.UUID) (*Message, error)
 
