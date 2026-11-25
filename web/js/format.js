@@ -136,6 +136,7 @@ export const TERMINAL_STATUSES = new Set(['printed', 'rejected', 'failed']);
 /** What the sender sees: awaiting | queued | printing | printed | rejected | failed. */
 export function senderStage(status) {
   switch (status) {
+    case 'awaiting_review': // user routes already report it as awaiting_approval
     case 'awaiting_approval':
       return 'awaiting';
     case 'pending':
@@ -150,6 +151,7 @@ export function senderStage(status) {
 
 /** Status shapes and labels, as drawn in the design. */
 export const STATUS = {
+  awaiting_review: { shape: 'awaiting', label: 'In review' },
   awaiting_approval: { shape: 'awaiting', label: 'Awaiting approval' },
   pending: { shape: 'queued', label: 'In queue' },
   claimed: { shape: 'printing', label: 'Printing' },
@@ -158,3 +160,23 @@ export const STATUS = {
   failed: { shape: 'failed', label: 'Failed' },
   rejected: { shape: 'rejected', label: 'Rejected' },
 };
+
+/** Why the automated moderation held (or passed) a message, by moderation flag code. */
+export const FLAG_LABELS = {
+  link: 'Link',
+  email: 'Email address',
+  card_number: 'Card number',
+  iban: 'IBAN',
+  banned_word: 'Banned word',
+  shouting: 'Shouting',
+  dark_glyphs: 'Block characters',
+  repeated_chars: 'Repeated characters',
+  whitespace: 'Blank space',
+  llm_flagged: 'Flagged by the classifier',
+  llm_unavailable: 'Classifier unavailable',
+  moderation_disabled: 'Moderation was off',
+};
+
+export function flagLabel(code) {
+  return FLAG_LABELS[code] ?? code;
+}
