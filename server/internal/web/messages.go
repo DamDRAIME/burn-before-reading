@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"bbr/internal/messages"
+	"bbr/internal/moderation"
 	"bbr/internal/printers"
 	"bbr/internal/validate"
 )
@@ -39,6 +40,8 @@ func (h *MessagesHandler) RegisterAdminRoutes(r chi.Router) {
 	r.Patch("/messages/{id}/approve", h.approve)
 	r.Patch("/messages/{id}/reject", h.reject)
 	r.Patch("/messages/{id}/requeue", h.requeue)
+	r.Get("/moderation", h.isModerationEnabled)
+	r.Put("/moderation", h.setModeration)
 }
 
 // RegisterPrinterRoutes registers routes mounted under /printer (behind RequirePrinterToken).
@@ -87,22 +90,24 @@ type messagePublicResponse struct {
 }
 
 type messageAdminResponse struct {
-	ID             uuid.UUID  `json:"id"`
-	SequenceNumber int64      `json:"sequence_number"`
-	SenderName     string     `json:"sender_name"`
-	SenderIP       *net.IP    `json:"sender_ip"`
-	Source         string     `json:"source"`
-	PrinterID      uuid.UUID  `json:"printer_id"`
-	Content        string     `json:"content"`
-	Status         string     `json:"status"`
-	CreatedAt      time.Time  `json:"created_at"`
-	ModeratedAt    *time.Time `json:"moderated_at"`
-	ClaimedAt      *time.Time `json:"claimed_at"`
-	ProcessedAt    *time.Time `json:"processed_at"`
-	PrintedAt      *time.Time `json:"printed_at"`
-	LastUpdatedAt  time.Time  `json:"last_updated_at"`
-	Attempts       int        `json:"attempts"`
-	LastError      *string    `json:"last_error"`
+	ID              uuid.UUID             `json:"id"`
+	SequenceNumber  int64                 `json:"sequence_number"`
+	SenderName      string                `json:"sender_name"`
+	SenderIP        *net.IP               `json:"sender_ip"`
+	Source          string                `json:"source"`
+	PrinterID       uuid.UUID             `json:"printer_id"`
+	Content         string                `json:"content"`
+	Status          string                `json:"status"`
+	ModerationFlags []moderation.Flag     `json:"moderation_flags"`
+	ModeratedBy     *moderation.Moderator `json:"moderated_by"`
+	CreatedAt       time.Time             `json:"created_at"`
+	ModeratedAt     *time.Time            `json:"moderated_at"`
+	ClaimedAt       *time.Time            `json:"claimed_at"`
+	ProcessedAt     *time.Time            `json:"processed_at"`
+	PrintedAt       *time.Time            `json:"printed_at"`
+	LastUpdatedAt   time.Time             `json:"last_updated_at"`
+	Attempts        int                   `json:"attempts"`
+	LastError       *string               `json:"last_error"`
 }
 
 // -- Handlers ----
@@ -245,6 +250,40 @@ func (h *MessagesHandler) requeue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, http.StatusOK, toMessageAdminResponse(msg))
+}
+
+func (h *MessagesHandler) isModerationEnabled(w http.ResponseWriter, r *http.Request) {
+	enabled := h.service.ModerationEnabled()
+	writeJSONResponse(w, http.StatusOK, map[string]bool{"enabled": enabled})
+}
+
+func (h *MessagesHandler) setModeration(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Enabled == nil {
+		writeErrorResponse(w, http.StatusBadRequest, `"enabled" is required`)
+		return
+	}
+
+	adminID, ok := requireUserID(w, r, h.logger)
+	if !ok {
+		return
+	}
+	if !*req.Enabled {
+
+		h.logger.Warn("moderation disabled", "admin_id", adminID)
+
+	} else {
+		h.logger.Info("moderation enabled", "admin_id", adminID)
+	}
+
+	h.service.SetModerationEnabled(r.Context(), *req.Enabled)
+	writeJSONResponse(w, http.StatusOK, map[string]bool{"enabled": *req.Enabled})
 }
 
 // -- Printer Handlers ----
@@ -409,6 +448,11 @@ func (h *MessagesHandler) getForSender(w http.ResponseWriter, r *http.Request) {
 // -- Mappers ----
 
 func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
+	// Do not expose StatusAwaitingReview to users
+	status := msg.Status
+	if status == messages.StatusAwaitingReview {
+		status = messages.StatusAwaitingApproval
+	}
 	return messagePublicResponse{
 		ID:             msg.ID,
 		SequenceNumber: msg.SequenceNumber,
@@ -416,7 +460,7 @@ func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
 		Source:         string(msg.Source),
 		PrinterID:      msg.PrinterID,
 		Content:        msg.Content,
-		Status:         string(msg.Status),
+		Status:         string(status),
 		CreatedAt:      msg.CreatedAt,
 		ModeratedAt:    msg.ModeratedAt,
 		ClaimedAt:      msg.ClaimedAt,
@@ -428,22 +472,24 @@ func toMessagePublicResponse(msg *messages.Message) messagePublicResponse {
 
 func toMessageAdminResponse(msg *messages.Message) messageAdminResponse {
 	return messageAdminResponse{
-		ID:             msg.ID,
-		SequenceNumber: msg.SequenceNumber,
-		SenderName:     msg.SenderName,
-		SenderIP:       msg.SenderIP,
-		Source:         string(msg.Source),
-		PrinterID:      msg.PrinterID,
-		Content:        msg.Content,
-		Status:         string(msg.Status),
-		CreatedAt:      msg.CreatedAt,
-		ModeratedAt:    msg.ModeratedAt,
-		ClaimedAt:      msg.ClaimedAt,
-		ProcessedAt:    msg.ProcessedAt,
-		PrintedAt:      msg.PrintedAt,
-		Attempts:       msg.Attempts,
-		LastError:      msg.LastError,
-		LastUpdatedAt:  msg.LastUpdatedAt,
+		ID:              msg.ID,
+		SequenceNumber:  msg.SequenceNumber,
+		SenderName:      msg.SenderName,
+		SenderIP:        msg.SenderIP,
+		Source:          string(msg.Source),
+		PrinterID:       msg.PrinterID,
+		Content:         msg.Content,
+		Status:          string(msg.Status),
+		ModerationFlags: msg.ModerationFlags,
+		ModeratedBy:     msg.ModeratedBy,
+		CreatedAt:       msg.CreatedAt,
+		ModeratedAt:     msg.ModeratedAt,
+		ClaimedAt:       msg.ClaimedAt,
+		ProcessedAt:     msg.ProcessedAt,
+		PrintedAt:       msg.PrintedAt,
+		LastUpdatedAt:   msg.LastUpdatedAt,
+		Attempts:        msg.Attempts,
+		LastError:       msg.LastError,
 	}
 }
 

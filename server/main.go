@@ -19,6 +19,7 @@ import (
 
 	"bbr/internal/database"
 	"bbr/internal/messages"
+	"bbr/internal/moderation"
 	"bbr/internal/printers"
 	"bbr/internal/users"
 	"bbr/internal/web"
@@ -33,6 +34,9 @@ const (
 
 	// claimReaperInterval is how often stale claims are checked for.
 	claimReaperInterval = 5 * time.Minute
+
+	//reviewInterval is how often web messages are reviewed for.
+	reviewInterval = 1 * time.Minute
 )
 
 func main() {
@@ -81,7 +85,7 @@ func run(logger *slog.Logger) error {
 	userService := users.NewService(userStore)
 	userHandler := web.NewUsersHandler(userService, logger)
 	msgStore := database.NewMessageStore(pool, logger)
-	msgService := messages.NewService(msgStore, printerService, userService)
+	msgService := messages.NewService(msgStore, printerService, userService, moderation.NoClassifier{})
 	msgHandler := web.NewMessagesHandler(msgService, logger)
 
 	// Set up router
@@ -119,6 +123,9 @@ func run(logger *slog.Logger) error {
 	var background sync.WaitGroup
 	background.Go(func() {
 		msgService.RunClaimReaper(ctx, claimTimeout, claimReaperInterval, logger)
+	})
+	background.Go(func() {
+		msgService.RunReviewWorker(ctx, reviewInterval, logger)
 	})
 
 	serverErr := make(chan error, 1)

@@ -926,7 +926,7 @@ func rejectQueuedMessages(ctx context.Context, tx pgx.Tx, userID uuid.UUID, prin
 		userID,
 		messages.SourceWeb,
 		printerIDs,
-		[]messages.Status{messages.StatusPending, messages.StatusAwaitingApproval},
+		[]messages.Status{messages.StatusPending, messages.StatusAwaitingApproval, messages.StatusAwaitingReview},
 	)
 	if err != nil {
 		return fmt.Errorf("reject queued messages: %w", err)

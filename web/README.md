@@ -8,9 +8,18 @@ The website people use to write messages, follow them until they're printed, and
 |---|---|---|
 | `/` | user or admin | **Write.** The receipt is the composer: pick a recipient, write, print. After sending, the circle and the four-step bar follow the message (awaiting → approved → queued → printed), polling every 3 s. The draft is kept on this device until it's sent, so a reload or a trip to History doesn't lose it. |
 | `/history` | user | The user's own messages as small receipts, filterable by recipient. |
-| `/admin` | admin | (A signed-in user who isn't an admin sees "Admins only".) Counts, a 52-week activity grid, the approval queue, printers, users and the full message log (with requeue for failed messages). Each printer and user has a **Manage** pane: ownership, quiet hours, join links, printer access, devices and recovery invites. |
+| `/admin` | admin | (A signed-in user who isn't an admin sees "Admins only".) Counts, a 52-week activity grid, the approval queue, printers, users and the full message log (with requeue for failed messages). Each printer and user has a **Manage** pane: ownership, quiet hours, join links, printer access, devices and recovery invites. See [Moderation](#moderation) below. |
 | `/join#bbr_join_…` | anyone | Signs up with a printer owner's join link (pick a name, name the device). Someone already signed in gets a "Join as *name*" confirmation instead, which adds the printer to their account. |
 | `/join#bbr_invite_…` | anyone | Claims an invite (from the admin, or a device invite from your own account) for this device. The same form shows on `/` when nobody is signed in, and accepts either kind of code. |
+
+### Moderation
+
+The server checks every web message automatically first (see the server README). On `/admin`:
+
+- **The switch** at the top of Approvals shows whether the automated moderation is on. **Turn off** asks for confirmation first. While it's off the bar turns red, and web messages go straight to the printer. The server turns it back on when it restarts.
+- **Approval cards** list the flags that held each message: a label such as *Link* or *Banned word*, plus the detail (what matched, the classifier's verdict, or why the classifier failed).
+- **The message log** has an **In review** filter for messages the moderation hasn't decided on yet, and the Approvals heading counts them. Each row has a **Details** button, which reads *N flags* in red when the message has flags. It opens a pane with the whole message, who moderated it (automatically or by an admin) and when, its flags, the last print error, and Approve / Reject while it's awaiting approval.
+- **Senders never see any of this.** User routes report `awaiting_review` as `awaiting_approval` and leave the flags out, so Write and History show "awaiting" as before.
 
 ### Settings
 

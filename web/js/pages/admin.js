@@ -2,8 +2,8 @@
 
 import { fill, h, rings, shape } from '../dom.js';
 import { api, ApiError, fetchAll, joinLink, PAGE_SIZE } from '../api.js';
-import { dayKey, longDate, MONTHS_SHORT, printerState, quietHoursText, seqNo, shortDate, STATUS, timeAgo } from '../format.js';
-import { confirmButton, copyField, openPane } from '../pane.js';
+import { dayKey, flagLabel, longDate, MONTHS_SHORT, printerState, quietHoursText, receiptDate, seqNo, shortDate, STATUS, timeAgo } from '../format.js';
+import { closePane, confirmButton, copyField, openPane } from '../pane.js';
 import { joinLinksList, quietHoursForm } from '../printer-tools.js';
 import { whenVisible } from '../visibility.js';
 
@@ -12,6 +12,7 @@ const WEEKS = 52;
 
 const FILTERS = [
   ['all', 'All', null],
+  ['review', 'In review', 'awaiting_review'],
   ['waiting', 'Awaiting', 'awaiting_approval'],
   ['queue', 'In queue', 'pending,claimed,processed'],
   ['printed', 'Printed', 'printed'],
@@ -45,6 +46,10 @@ export function adminPage(ctx) {
     printers: [],
     users: [],
     waiting: [],
+    reviewCount: 0, // web messages the automated moderation hasn't decided on yet
+    moderation: null, // true / false once loaded
+    moderationBusy: false,
+    moderationError: null,
     queueCount: null,
     activity: null, // { counts: Map(dayKey → n), total, year }
     activityError: null,
@@ -68,7 +73,11 @@ export function adminPage(ctx) {
 
   const statsEl = h('div', { class: 'stats' });
   const activityEl = h('section', { id: 'activity', class: 'admin-section', 'aria-labelledby': 'activity-h' });
-  const queueEl = h('section', { id: 'queue', class: 'admin-section', 'aria-labelledby': 'queue-h' });
+  // The moderation switch has its own element, so the 20 s refresh doesn't reset a pending "Turn off?" confirmation.
+  const queueHeadEl = h('div');
+  const moderationEl = h('div', { class: 'moderation' });
+  const queueBodyEl = h('div', { class: 'queue__body' });
+  const queueEl = h('section', { id: 'queue', class: 'admin-section', 'aria-labelledby': 'queue-h' }, queueHeadEl, moderationEl, queueBodyEl);
   const printersEl = h('section', { id: 'printers', class: 'admin-section', 'aria-labelledby': 'printers-h' });
   const usersEl = h('section', { id: 'users', class: 'admin-section', 'aria-labelledby': 'users-h' });
   const logEl = h('section', { id: 'log', class: 'admin-section', 'aria-labelledby': 'log-h' });
@@ -169,11 +178,64 @@ export function adminPage(ctx) {
     if (!destroyed) await loadCore();
   }
 
+  /** The reasons the automated moderation recorded, one line each. */
+  function flagList(flags) {
+    if (!flags?.length) return null;
+    return h('ul', { class: 'flags', 'aria-label': 'Moderation flags' }, flags.map((f) => h('li', { class: 'flag' },
+      h('span', { class: 'flag__code' }, flagLabel(f.code)),
+      f.detail && h('span', { class: 'flag__detail' }, f.detail))));
+  }
+
+  async function setModeration(enabled) {
+    st.moderationBusy = true;
+    st.moderationError = null;
+    paintModeration();
+    try {
+      const res = await api.adminSetModeration(enabled);
+      st.moderation = res.enabled;
+    } catch (err) {
+      st.moderationError = `Couldn’t turn moderation ${enabled ? 'on' : 'off'}. ${err.message}`;
+    }
+    st.moderationBusy = false;
+    paintModeration();
+    // Turning it off releases the messages still in review, so counts change.
+    if (!destroyed) loadCore();
+  }
+
+  function paintModeration() {
+    const on = st.moderation;
+    moderationEl.classList.toggle('moderation--off', on === false);
+    fill(moderationEl,
+      h('div', { class: 'moderation__text' },
+        h('span', { class: 'strong' }, on == null ? 'Automated moderation' : `Automated moderation is ${on ? 'on' : 'off'}`),
+        h('span', { class: 'muted small' }, on == null
+          ? (st.moderationError ? '' : 'Loading…')
+          : on
+            ? 'Web messages are checked first: anything flagged waits here, with the reasons.'
+            : 'Web messages go straight to the printer, unchecked. It turns back on when the server restarts.')),
+      on != null && h('div', { class: 'moderation__actions' },
+        on
+          ? confirmButton('Turn off', {
+            question: 'Print web messages without checking them?',
+            yes: 'Turn off',
+            run: () => setModeration(false),
+            onError: (err) => {
+              st.moderationError = err.message;
+              paintModeration();
+            },
+          })
+          : h('button', { type: 'button', class: 'btn btn--solid btn--sm', disabled: st.moderationBusy, onClick: () => setModeration(true) }, 'Turn on')),
+      st.moderationError && h('p', { class: 'form-error', role: 'alert' }, st.moderationError));
+  }
+
   function paintQueue() {
-    fill(queueEl, 
+    const subtitle = ['Oldest first · approved messages go straight to the printer'];
+    if (st.reviewCount > 0) subtitle.push(`${st.reviewCount} in automated review`);
+    fill(queueHeadEl,
       h('div', { class: 'section-head' },
         h('h2', { id: 'queue-h', class: 'section-title' }, 'Approvals'),
-        h('span', { class: 'muted small' }, 'Oldest first · approved messages go straight to the printer')),
+        h('span', { class: 'muted small' }, subtitle.join(' · '))));
+    fill(queueBodyEl,
       st.notice && h('p', { class: 'notice', role: 'status' }, st.notice),
       st.waiting.length > 0
         ? h('div', { class: 'approvals' }, st.waiting.map((m) => {
@@ -183,14 +245,58 @@ export function adminPage(ctx) {
               h('div', { class: 'approval__who' },
                 h('span', { class: 'strong' }, m.sender_name, h('span', { class: 'muted normal' }, ' to '), toName(m.printer_id)),
                 h('span', { class: 'mono small muted' }, [`#${seqNo(m.sequence_number)}`, timeAgo(m.created_at), m.sender_ip].filter(Boolean).join(' · '))),
-              h('p', { class: 'approval__body' }, m.content)),
+              h('p', { class: 'approval__body' }, m.content),
+              flagList(m.moderation_flags)),
             h('div', { class: 'approval__actions' },
               h('button', { type: 'button', class: 'btn btn--outline', disabled: busy, onClick: () => act(m, 'reject') }, 'Reject'),
               h('button', { type: 'button', class: 'btn btn--solid', disabled: busy, onClick: () => act(m, 'approve') }, 'Approve')));
         }))
         : h('div', { class: 'empty' },
           h('span', { class: 'empty__title' }, 'All clear.'),
-          h('span', { class: 'muted' }, 'New web messages will show up here.')));
+          h('span', { class: 'muted' }, st.moderation === false
+            ? 'Moderation is off: web messages go straight to the printer.'
+            : 'Web messages the automated moderation flags will show up here.')));
+  }
+
+  /** Everything about one message, including why the moderation held or passed it. */
+  function openMessagePane(m) {
+    const moderatedText = m.source === 'admin'
+      ? 'Sent by an admin: skipped moderation.'
+      : m.moderated_by === 'auto'
+        ? `Passed automatically${m.moderated_at ? `, ${receiptDate(m.moderated_at)}` : ''}.`
+        : m.moderated_by === 'admin'
+          ? `Decided by an admin${m.moderated_at ? `, ${receiptDate(m.moderated_at)}` : ''}.`
+          : m.status === 'awaiting_review'
+            ? 'The automated moderation hasn’t looked at it yet.'
+            : m.status === 'awaiting_approval'
+              ? 'Waiting for an admin.'
+              : m.status === 'rejected'
+                ? 'Rejected with no moderator recorded, usually because the sender was removed from the printer.'
+                : m.moderated_at
+                  ? `Moderated ${receiptDate(m.moderated_at)}, before moderation was recorded.`
+                  : 'Not moderated.';
+
+    openPane({
+      title: `#${seqNo(m.sequence_number)}`,
+      render(body) {
+        const actions = m.status === 'awaiting_approval' && h('div', { class: 'tool__actions' },
+          h('button', { type: 'button', class: 'btn btn--outline btn--sm', onClick: () => { closePane(); act(m, 'reject'); } }, 'Reject'),
+          h('button', { type: 'button', class: 'btn btn--solid btn--sm', onClick: () => { closePane(); act(m, 'approve'); } }, 'Approve'));
+        fill(body,
+          paneSection('Message',
+            h('p', { class: 'strong' }, m.sender_name, h('span', { class: 'muted normal' }, ' to '), toName(m.printer_id)),
+            h('p', { class: 'approval__body' }, m.content),
+            h('p', { class: 'mono small muted' }, [receiptDate(m.created_at), m.sender_ip].filter(Boolean).join(' · ')),
+            h('span', { class: 'status-cell' }, shape((STATUS[m.status] ?? STATUS.awaiting_approval).shape), STATUS[m.status]?.label ?? m.status)),
+          paneSection('Moderation',
+            h('p', { class: 'tool__lede' }, moderatedText),
+            flagList(m.moderation_flags) ?? h('p', { class: 'muted small' }, 'No flags.'),
+            actions),
+          m.last_error && paneSection('Printing',
+            h('p', { class: 'small' }, `Last error: ${m.last_error}`),
+            h('p', { class: 'muted small' }, `${m.attempts} ${m.attempts === 1 ? 'attempt' : 'attempts'}`)));
+      },
+    });
   }
 
   function paintPrinters() {
@@ -258,7 +364,14 @@ export function adminPage(ctx) {
               h('td', null, statusCell(m)),
               h('td', { class: 'nowrap muted', title: m.last_error ? `Last error: ${m.last_error}` : null }, when(m)),
               h('td', { class: 'log__actions' },
-                m.status === 'failed' && h('button', { type: 'button', class: 'btn btn--outline btn--sm', disabled: st.busy.has(m.id), onClick: () => act(m, 'requeue') }, 'Requeue'))))))),
+                m.status === 'failed' && h('button', { type: 'button', class: 'btn btn--outline btn--sm', disabled: st.busy.has(m.id), onClick: () => act(m, 'requeue') }, 'Requeue'),
+                h('button', {
+                  type: 'button',
+                  class: `btn btn--outline btn--sm${m.moderation_flags?.length ? ' btn--flagged' : ''}`,
+                  'aria-haspopup': 'dialog',
+                  title: m.moderation_flags?.length ? m.moderation_flags.map((f) => flagLabel(f.code)).join(', ') : null,
+                  onClick: () => openMessagePane(m),
+                }, m.moderation_flags?.length ? `${m.moderation_flags.length} ${m.moderation_flags.length === 1 ? 'flag' : 'flags'}` : 'Details'))))))),
       (st.page > 0 || st.rowsMore) && h('div', { class: 'pager' },
         h('button', { type: 'button', class: 'btn btn--outline btn--sm', disabled: st.page === 0 || st.rowsLoading, onClick: () => { st.page -= 1; loadRows(); } }, '← Newer'),
         h('span', { class: 'muted small' }, `Page ${st.page + 1}`),
@@ -609,27 +722,48 @@ export function adminPage(ctx) {
 
   async function loadCore() {
     try {
-      const [printers, users, waiting, queue] = await Promise.all([
+      const [printers, users, waiting, review, queue] = await Promise.all([
         fetchAll(api.adminPrinters),
         fetchAll(api.adminUsers),
         fetchAll(api.adminMessages, { status: 'awaiting_approval', order: 'asc' }),
+        fetchAll(api.adminMessages, { status: 'awaiting_review' }),
         fetchAll(api.adminMessages, { status: 'pending,claimed,processed' }),
       ]);
       if (destroyed) return;
       st.printers = printers;
       st.users = users;
       st.waiting = waiting;
+      st.reviewCount = review.length;
       st.queueCount = queue.length;
       st.error = null;
     } catch (err) {
       if (destroyed) return;
       st.error = `Couldn’t refresh. ${err.message}`;
     }
+    await loadModeration();
+    if (destroyed) return;
     paintStats();
     paintQueue();
     paintPrinters();
     paintUsers();
     await loadRows();
+  }
+
+  /** Repaints the switch only when its state changes, so an open confirmation survives refreshes. */
+  async function loadModeration() {
+    if (st.moderationBusy) return;
+    try {
+      const { enabled } = await api.adminModeration();
+      if (destroyed) return;
+      const changed = enabled !== st.moderation || st.moderationError;
+      st.moderation = enabled;
+      st.moderationError = null;
+      if (changed) paintModeration();
+    } catch (err) {
+      if (destroyed) return;
+      st.moderationError = `Couldn’t load the moderation setting. ${err.message}`;
+      paintModeration();
+    }
   }
 
   /**
@@ -682,6 +816,7 @@ export function adminPage(ctx) {
 
   paintStats();
   paintActivity();
+  paintModeration();
   paintQueue();
   paintPrinters();
   paintUsers();

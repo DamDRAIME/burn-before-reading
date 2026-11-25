@@ -1,0 +1,32 @@
+# Banned words and phrases, one per line. Lines starting with # are ignored.
+# Entries go through Normalize, so case, accents, leetspeak and repeated
+# letters don't matter: "enculé", "ENCULE" and "3ncul3" are the same entry.
+# Matching is on whole words, so "con" would not match "contrat".
+#
+# Sample from LDNOOBW: github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words
+
+# English
+fuck
+fucker
+fucking
+motherfucker
+shit
+bitch
+cunt
+asshole
+whore
+slut
+
+# French
+connard
+connasse
+salope
+salaud
+pute
+encule
+batard
+pede
+fdp
+ntm
+nique ta mere
+va te faire foutre
