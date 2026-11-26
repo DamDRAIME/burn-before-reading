@@ -315,6 +315,7 @@ func (s *MessageStore) ClaimOldest(ctx context.Context, printerID uuid.UUID) (*m
 		UPDATE messages
 		SET status = $2,
 			claimed_at = NOW(),
+			processed_at = NULL,
 			attempts = attempts + 1
 		WHERE id = (
 			SELECT id
