@@ -78,7 +78,7 @@
 - [X] Expose printer health: computed `online` field (last_heartbeat_at within N seconds) in the printer response
 - [X] Treat a claim as a heartbeat
 - [X] ~~... also during quiet hours: `ClaimOldest` returns `ErrInQuietHours` before the query that sets `last_heartbeat_at`, so a printer that only polls claims shows offline all night~~ --> Not the case because to threads will run in parallel on the Raspberry Pi, one for polling and one for the heartbeat.
-- [ ] Reset `processed_at` when a message is claimed again after a retry; today it keeps the previous attempt's `processed_at`, earlier than the new `claimed_at`
+- [X] Reset `processed_at` when a message is claimed again after a retry; today it keeps the previous attempt's `processed_at`, earlier than the new `claimed_at`
 - [X] ~~Decide whether a printer may hold several claims at once (today it can claim again before finishing the previous message)~~ --> This will be guaranteed by the process running on the Raspberry Pi
 - [X] `DELETE /admin/printers/{id}/quiet_hours` (and the owner route) also sets `timezone` to NULL, while create always stores the default timezone
 
