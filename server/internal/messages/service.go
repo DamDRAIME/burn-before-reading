@@ -37,6 +37,7 @@ const (
 	MaxContentLength     = 500
 	ContentAllowNewLines = true
 	ContentMaxNewLines   = 10
+	llmClassifierTimeout = 30 * time.Second
 )
 
 type PrinterGetter interface {
@@ -263,8 +264,19 @@ func (s *Service) review(ctx context.Context, msg *Message) error {
 	flags := moderation.CheckRules(msg.Content)
 	to := StatusAwaitingApproval
 	if len(flags) == 0 {
-		res, err := s.classifier.Classify(ctx, msg.Content)
+		classifyCtx, cancel := context.WithTimeout(ctx, llmClassifierTimeout)
+		res, err := s.classifier.Classify(classifyCtx, msg.Content)
+		cancel()
+
 		if err != nil {
+			if ctx.Err() != nil {
+				// Shutting down, not a classifier failure: leave the message in awaiting_review so the next start
+				// reviews it again.
+				return ctx.Err()
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("classifier timed out after %s", llmClassifierTimeout)
+			}
 			flags = []moderation.Flag{{Code: moderation.LLMUnavailable, Detail: err.Error()}}
 		} else if res.Verdict == moderation.VerdictSafe {
 			to = StatusPending
@@ -337,7 +349,9 @@ func (s *Service) drainReviewQueue(ctx context.Context, logger *slog.Logger) {
 		}
 
 		if err := s.review(ctx, next[0]); err != nil {
-			logger.Error("review message", "id", next[0].ID, "error", err)
+			if ctx.Err() == nil { // don't log the cancellation itself on shutdown
+				logger.Error("review message", "id", next[0].ID, "error", err)
+			}
 			return
 		}
 	}

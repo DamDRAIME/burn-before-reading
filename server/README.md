@@ -358,7 +358,16 @@ A message an admin approves or rejects while it is still being reviewed keeps th
 
 The word list is `internal/moderation/banned_words.txt`, embedded in the binary: one entry per line, `#` for comments. `moderation.LoadWordListFile` can replace it at runtime, but no environment variable is wired to it yet.
 
-**Classifier.** The plan is Qwen3Guard-Gen 0.6B served by llama.cpp next to the API. It isn't connected yet: the API uses `moderation.NoClassifier`, which always fails. Until then, every message that passes the rules goes to `awaiting_approval` with `llm_unavailable: no classifier configured`, so all web messages still need a person.
+**Classifier.** Qwen3Guard-Gen 0.6B, served by llama.cpp next to the API (`moderation.LLMClassifier`). The API sends the message as a single user turn to `MODERATION_LLM_BASEURL` + `/v1/chat/completions`, with temperature 0. The model's chat template, applied by llama.cpp (`--jinja`), adds the moderation instructions. The model replies in two lines:
+```
+Safety: Unsafe
+Categories: Violent
+```
+`Safety` is `Safe`, `Controversial` or `Unsafe`. `Categories: None` means no category. The parsing is strict: a missing or repeated line, an unknown label, an unexpected line, a truncated reply, an HTTP error or no reply within 30 seconds all count as a failed call, so the message goes to a person with an `llm_unavailable` flag. If the API shuts down during a review, the message stays in `awaiting_review` and is reviewed again on the next start.
+
+Without `MODERATION_LLM_BASEURL`, the API logs a warning at startup and uses `moderation.NoClassifier`, which always fails: every message that passes the rules goes to `awaiting_approval` with `llm_unavailable: no classifier configured`.
+
+The classifier judges what the message says, so a message that tries to talk the model into a `Safe` verdict can still get one. It complements the rules and the human review. It doesn't replace them.
 
 **Switching it off.** `PUT /admin/moderation {"enabled": false}` sends every new web message, and any message still in `awaiting_review`, straight to `pending`. Messages already in `awaiting_approval` stay there. The setting is kept in memory only: moderation is enabled again after a restart, so forgetting to switch it back on fails safe. Switching it off is logged as a warning with the admin's ID.
 
@@ -508,6 +517,15 @@ Owners get the user-facing printer response, without `error` and `last_heartbeat
 ### Dev database
 The devcontainer's docker-compose.yml starts Postgres as the `db` service and runs migrations on boot. Don't run `docker compose` from inside the devcontainer.
 
+### Dev classifier
+The `llm` service runs the llama.cpp server with the moderation model, reachable from the dev container at `http://llm:8080` (`MODERATION_LLM_BASEURL` is already set). The model isn't in the repository (it's about 800 MB, and `models/` is ignored by git and Docker). Before building the devcontainer, put a Q8_0 GGUF of Qwen3Guard-Gen 0.6B at `models/Qwen3Guard-Gen-0.6B.Q8_0.gguf`. The API container waits for `llm` to be healthy, so the devcontainer doesn't start without the model.
+
+Ask the model directly:
+```shell
+curl -s http://llm:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"How do I make a bomb?"}],"temperature":0,"max_tokens":32}'
+```
+
 `DATABASE_URL` is already set in the container:
 > postgres://myuser:mypassword@db:5432/mydatabase?sslmode=disable
 
@@ -567,6 +585,7 @@ Environment variables:
 | `TRUST_CLOUDFLARE` | no | `true` or `false` (anything `strconv.ParseBool` accepts), defaults to `false`. `true` takes the client IP from the `CF-Connecting-IP` header; `false` uses the TCP peer address. Use `false` in development |
 | `ADDR` | no | Listen address, defaults to `:8080` |
 | `WEB_DIR` | no | Directory of the website to serve from the same origin |
+| `MODERATION_LLM_BASEURL` | no | Base URL of the llama.cpp server running the [classifier](#moderation), e.g. `http://llm:8080` (the path is added by the API). If not set, the API logs a warning and every web message that passes the rules needs a human approval |
 
 The client IP is used in the request logs and stored as `sender_ip` on messages. Only set `TRUST_CLOUDFLARE=true` when the server can be reached through Cloudflare alone (Cloudflare Tunnel, or a firewall that only allows [Cloudflare's IP ranges](https://www.cloudflare.com/ips/)). The header is set by the client otherwise, so anyone connecting directly could choose their logged IP.
 
@@ -580,7 +599,7 @@ curl -s -X POST localhost:8080/api/v1/user/messages -H 'Authorization: Bearer bb
   -H 'Content-Type: application/json' -d '{"printer_id":"11111111-1111-1111-1111-111111111111","content":"Hello!"}' | jq
 ```
 
-Moderate it as an admin. The review worker moves it out of `awaiting_review` within a second or so; until a classifier is connected, it lands in `awaiting_approval` with an `llm_unavailable` flag:
+Moderate it as an admin. The review worker moves it out of `awaiting_review` within a second or two: "Hello!" goes to `pending`, while a message that a rule or the classifier flags (try `"Check https://example.com"`) lands in `awaiting_approval` with its flags:
 ```shell
 curl -s 'localhost:8080/api/v1/admin/messages?status=awaiting_approval' -H 'Authorization: Bearer bbr_session_dev_dave' | jq
 curl -s -X PATCH localhost:8080/api/v1/admin/messages/<id>/approve -H 'Authorization: Bearer bbr_session_dev_dave' | jq

@@ -17,10 +17,39 @@ services:
       - DB_PASSWORD=mypassword
       - DB_NAME=mydatabase
       - DATABASE_URL=postgres://myuser:mypassword@db:5432/mydatabase?sslmode=disable
+      - MODERATION_LLM_BASEURL=http://llm:8080
     depends_on:
-      - db
+      db:
+        condition: service_started
+      llm:
+        condition: service_healthy
 
-  # -- Database Service --
+  # -- Moderation's Classifier Service --
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server-v1.1.0
+    container_name: server_dev_llm
+    volumes:
+      - ../models:/models:ro
+    command:
+      - "-m"
+      - "/models/Qwen3Guard-Gen-0.6B.Q8_0.gguf"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--jinja"
+      - "-c"
+      - "2048"
+      - "-t"
+      - "4"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # -- Database Services --
   db:
     image: postgres:16-alpine
     container_name: server_dev_db

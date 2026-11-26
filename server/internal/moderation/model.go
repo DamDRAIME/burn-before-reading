@@ -30,6 +30,11 @@ const (
 	VerdictUnsafe        Verdict = "unsafe"
 )
 
+func ParseVerdict(value string) (Verdict, bool) {
+	verdict := Verdict(value)
+	return verdict, verdict == VerdictSafe || verdict == VerdictControversial || verdict == VerdictUnsafe
+}
+
 type LLMResult struct {
 	Verdict    Verdict
 	Categories []string

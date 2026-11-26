@@ -60,6 +60,14 @@ func run(logger *slog.Logger) error {
 	if addr == "" {
 		addr = ":8080"
 	}
+	// Declared with the interface type so either implementation can be assigned.
+	var classifier messages.Classifier = moderation.NoClassifier{}
+	if llmBaseURL := os.Getenv("MODERATION_LLM_BASEURL"); llmBaseURL != "" {
+		classifier = moderation.NewLLMClassifier(llmBaseURL)
+		logger.Info("moderation classifier enabled", "llm_base_url", llmBaseURL)
+	} else {
+		logger.Warn("MODERATION_LLM_BASEURL is not set: no classifier, every web message that passes the rules needs a human approval")
+	}
 	trustCFEnv := os.Getenv("TRUST_CLOUDFLARE")
 	trustCloudflare := false
 	if trustCFEnv != "" {
@@ -85,7 +93,7 @@ func run(logger *slog.Logger) error {
 	userService := users.NewService(userStore)
 	userHandler := web.NewUsersHandler(userService, logger)
 	msgStore := database.NewMessageStore(pool, logger)
-	msgService := messages.NewService(msgStore, printerService, userService, moderation.NoClassifier{})
+	msgService := messages.NewService(msgStore, printerService, userService, classifier)
 	msgHandler := web.NewMessagesHandler(msgService, logger)
 
 	// Set up router

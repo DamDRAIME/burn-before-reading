@@ -57,8 +57,11 @@
 - [X] Add naive automated moderation: `awaiting_review` status, background review worker woken by `Submit`, rule flags stored in `moderation_flags`, `moderated_by` (`auto` / `admin`)
 - [X] Moderation rules (`internal/moderation`): links, emails, card numbers (Luhn), IBANs (mod-97), banned words after normalization, shouting, dark glyphs, repeated characters, whitespace
 - [X] Admin switch to disable moderation: `GET` / `PUT /admin/moderation`, in memory, enabled again on restart
-- [ ] LLM classifier: `llm` service (llama.cpp + Qwen3Guard-Gen 0.6B GGUF) in docker-compose, check the model's real reply format, then `classifier.go` replacing `NoClassifier`, with a per-call timeout in `review()`
-- [ ] Environment variables: `MODERATION_LLM_URL` (falls back to `NoClassifier` with a startup warning), `MODERATION_WORDLIST` (calls `LoadWordListFile`), optionally `MODERATION_ENABLED`
+- [X] LLM classifier: `llm` service (llama.cpp + Qwen3Guard-Gen 0.6B GGUF) in docker-compose, `LLMClassifier` in `classifier.go` with strict parsing of the `Safety:` / `Categories:` reply, 30 s per-call timeout in `review()` (a shutdown during a review leaves the message in `awaiting_review`)
+- [X] `MODERATION_LLM_BASEURL` (falls back to `NoClassifier` with a startup warning)
+- [ ] Environment variables: `MODERATION_WORDLIST` (calls `LoadWordListFile`), optionally `MODERATION_ENABLED`
+- [ ] Unit tests for `parseGuardReply` (table-driven, with the real replies) and `LLMClassifier.Classify` against an `httptest.NewServer` fake (500, bad JSON, empty `choices`, `finish_reason: length`)
+- [ ] Production deployment of the classifier: the model file and an `llm` service next to the API (the compose file is dev-only)
 
 ## Database
 - [X] Add an index column
