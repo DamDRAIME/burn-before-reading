@@ -106,5 +106,5 @@
 - [X] Run `gofmt` on `internal/web/auth.go` and `internal/web/mappers.go`
 - [ ] Add tests for the service layer using a fake Store (start with `printers.Service.Authenticate`: valid token, unknown token → ErrInvalidToken, store error passed through)
 - [ ] Add `httptest` tests for `RequirePrinterToken` and `RequireUserToken` with fake authenticators, including the 500 path (not covered by the manual curl tests)
-- [ ] `bearerTokenFromHeader` accepts an empty token (`Authorization: Bearer `) and passes `""` to the session lookup; reject it there
+- [X] `bearerTokenFromHeader` accepts an empty token (`Authorization: Bearer `) and passes `""` to the session lookup; reject it there
 - [X] Fill in the README "Server" section (replaced by the API reference and database diagram)

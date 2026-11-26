@@ -46,7 +46,8 @@ func requireUserID(w http.ResponseWriter, r *http.Request, logger *slog.Logger) 
 func bearerTokenFromHeader(r *http.Request) (string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	bearer, token, ok := strings.Cut(authHeader, " ")
-	if !ok || !strings.EqualFold("Bearer", bearer) {
+	token = strings.TrimSpace(token)
+	if !ok || !strings.EqualFold("Bearer", bearer) || token == "" {
 		return "", false
 	}
 	return token, true
