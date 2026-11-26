@@ -547,13 +547,14 @@ func (s *UserStore) ClaimInvite(ctx context.Context, inviteHash, sessionHash []b
 
 func (s *UserStore) SetInvite(ctx context.Context, userID uuid.UUID, inviteHash []byte, inviteExpiresAt time.Time, revokeAllSessions bool) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		// An invite only makes sense for a user who may send to at least one printer
+		// An invite only makes sense for a user (admins exempt) who may send to at least one printer
 		tag, err := tx.Exec(
 			ctx,
 			`UPDATE users
 			SET invite_hash = $1, invite_expires_at = $2
 			WHERE id = $3
-				AND EXISTS (SELECT 1 FROM user_printers WHERE user_id = $3)`,
+				AND (EXISTS (SELECT 1 FROM user_printers WHERE user_id = $3)
+					OR is_admin)`,
 			inviteHash,
 			inviteExpiresAt,
 			userID,
@@ -1018,14 +1019,15 @@ func mapUserPrinterError(err error) error {
 }
 
 func revokeAccessIfNoPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
-	// If the user has no more printer memberships, revoke all their sessions.
+	// If the user (admins exempt) has no more printer memberships, revoke all their sessions.
 	_, err := tx.Exec(
 		ctx,
 		`UPDATE user_sessions
 		SET revoked_at = NOW()
 		WHERE revoked_at IS NULL
 			AND user_id = $1
-			AND NOT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1)`,
+			AND NOT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1)
+			AND NOT (SELECT is_admin FROM users WHERE id = $1)`,
 		userID,
 	)
 	if err != nil {
@@ -1038,7 +1040,8 @@ func revokeAccessIfNoPrinters(ctx context.Context, tx pgx.Tx, userID uuid.UUID) 
 		SET invite_hash = NULL, invite_expires_at = NULL
 		WHERE id = $1
 		AND invite_hash IS NOT NULL
-		AND NOT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1)`,
+		AND NOT EXISTS (SELECT 1 FROM user_printers WHERE user_id = $1)
+		AND NOT is_admin`,
 		userID,
 	)
 	if err != nil {
