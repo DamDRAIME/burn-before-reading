@@ -2,8 +2,10 @@
 .vscode
 .git
 .gitattributes
+.gitignore
 Dockerfile
 .dockerignore
 README.md
 TODO
 migrations
+models
