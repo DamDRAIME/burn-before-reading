@@ -1,7 +1,7 @@
 # Burn Before Reading
 **Burn Before Reading** is a project to physically print messages left by people on a website. The short messages are submitted by vetted users via a simple website and handled by this Golang API. A Raspberry Pi does the interface with the printer. What makes this project stand out is that messages will be printed almost instantly by a *receipt thermal printer* at home.
 
-> Thermal printers do not require any ink to print as they directly burn tiny dots on the paper
+> Thermal printers do not require ink to print as they directly burn tiny dots on the paper
 
 ## High-level overview
 Here are the main steps involved in submitting, processing, and, finally, printing a message:
