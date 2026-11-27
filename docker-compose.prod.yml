@@ -1,0 +1,100 @@
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  # Runs the pending migrations, then exits. Never load migrations/seed.sql here: its tokens are public.
+  migrate:
+    image: migrate/migrate:v4.15.2
+    restart: "no"
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable"
+      - "up"
+    volumes:
+      - ./server/migrations:/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server-v1.1.0
+    restart: unless-stopped
+    volumes:
+      - ./server/models:/models:ro
+    command:
+      - "-m"
+      - "/models/Qwen3Guard-Gen-0.6B.Q8_0.gguf"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--jinja"
+      - "-c"
+      - "2048"
+      - "-t"
+      - "${LLM_THREADS:-2}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+
+  api:
+    build:
+      context: ./server
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+      TRUST_CLOUDFLARE: "true"
+      MODERATION_LLM_BASEURL: http://llm:8080
+      WEB_DIR: /web
+    volumes:
+      - ./web:/web:ro
+    # Uncomment to reach the API from the server itself (curl localhost:8080/health) while debugging.
+    # Bound to 127.0.0.1 so it stays off the internet.
+    # ports:
+    #   - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      llm:
+        condition: service_healthy
+    logging: *logging
+
+  cloudflared:
+    # Pin a release (https://github.com/cloudflare/cloudflared/releases) instead of latest once it works.
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on:
+      - api
+    logging: *logging
+
+volumes:
+  pgdata:
